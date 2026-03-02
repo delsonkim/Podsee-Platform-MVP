@@ -1,0 +1,31 @@
+@import "tailwindcss";
+
+/* ── Design tokens ───────────────────────────────────────────── */
+@theme inline {
+  /* Brand colours */
+  --color-forest:    #1e3d2f;   /* dark green — headings, key text */
+  --color-fern:      #4a7556;   /* mid green  — buttons, accents, tags */
+  --color-mint:      #eaf4e6;   /* pale green — tag bg, selected states */
+  --color-sage:      #5a6656;   /* muted green — secondary text */
+
+  /* Backgrounds */
+  --color-parchment: #FDFCF9;   /* main background */
+  --color-paper:     #fafaf7;   /* alternating section bg */
+  --color-cream:     #F0EDE6;   /* cream sections */
+
+  /* Borders */
+  --color-linen:     #e5e5db;   /* all borders */
+
+  /* Status */
+  --color-amber:     #F59E0B;
+
+  /* Fonts */
+  --font-sans:    var(--font-dm),      'DM Sans',            sans-serif;
+  --font-display: var(--font-jakarta), 'Plus Jakarta Sans',  sans-serif;
+}
+
+/* ── Base ────────────────────────────────────────────────────── */
+body {
+  background: #FDFCF9;
+  color: #1e3d2f;
+}

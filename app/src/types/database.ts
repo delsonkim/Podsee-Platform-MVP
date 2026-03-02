@@ -1,0 +1,195 @@
+export type BookingStatus = 'pending' | 'confirmed' | 'completed' | 'converted' | 'no_show' | 'cancelled'
+export type ParentReportedEnrolment = 'enrolled' | 'not_enrolled'
+export type CommissionStatus = 'pending' | 'invoiced' | 'paid' | 'overdue' | 'waived'
+export type RewardStatus = 'pending' | 'approved' | 'paid' | 'rejected'
+export type LevelGroup = 'primary' | 'secondary' | 'jc' | 'other'
+
+export interface Subject {
+  id: string
+  name: string
+  sort_order: number
+  created_at: string
+}
+
+export interface Level {
+  id: string
+  code: string
+  label: string
+  level_group: LevelGroup
+  sort_order: number
+  created_at: string
+}
+
+export interface Parent {
+  id: string
+  email: string
+  name: string
+  phone: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface Child {
+  id: string
+  parent_id: string
+  name: string
+  level_id: string
+  created_at: string
+  updated_at: string
+}
+
+export interface Centre {
+  id: string
+  name: string
+  slug: string
+  area: string | null
+  address: string | null
+  description: string | null
+  teaching_style: string | null
+  teacher_bio: string | null
+  teacher_qualifications: string | null
+  class_size: number | null
+  replacement_class_policy: string | null
+  makeup_class_policy: string | null
+  commitment_terms: string | null
+  notice_period_terms: string | null
+  payment_terms: string | null
+  parking_info: string | null
+  nearest_mrt: string | null
+  years_operating: number | null
+  track_record: string | null
+  is_active: boolean
+  is_paused: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface TrialSlot {
+  id: string
+  centre_id: string
+  subject_id: string
+  level_id: string
+  date: string
+  start_time: string
+  end_time: string
+  trial_fee: number
+  max_students: number
+  spots_remaining: number
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface Booking {
+  id: string
+  booking_ref: string
+  trial_slot_id: string
+  centre_id: string
+  child_id: string
+  parent_id: string
+  parent_name_at_booking: string
+  parent_email_at_booking: string
+  parent_phone_at_booking: string | null
+  child_name_at_booking: string
+  child_level_at_booking: string
+  trial_fee_at_booking: number
+  status: BookingStatus
+  acknowledged_at: string | null
+  referral_source: string | null
+  is_flagged: boolean
+  flag_reason: string | null
+  admin_notes: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface TrialOutcome {
+  id: string
+  booking_id: string
+  parent_reported_status: ParentReportedEnrolment | null
+  reported_at: string | null
+  admin_verified: boolean
+  admin_verified_at: string | null
+  admin_notes: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface Commission {
+  id: string
+  trial_outcome_id: string
+  centre_id: string
+  commission_amount: number
+  status: CommissionStatus
+  invoice_number: string | null
+  invoiced_at: string | null
+  paid_at: string | null
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface Reward {
+  id: string
+  trial_outcome_id: string
+  parent_id: string
+  reward_amount: number
+  status: RewardStatus
+  approved_at: string | null
+  paid_at: string | null
+  payment_method: string | null
+  payment_reference: string | null
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+
+// ── Status display helpers ─────────────────────────────────────
+
+export const BOOKING_STATUS_LABEL: Record<BookingStatus, string> = {
+  pending: 'Pending',
+  confirmed: 'Confirmed',
+  completed: 'Completed',
+  converted: 'Converted',
+  no_show: 'No Show',
+  cancelled: 'Cancelled',
+}
+
+export const BOOKING_STATUS_COLOR: Record<BookingStatus, string> = {
+  pending: 'bg-amber-100 text-amber-800',
+  confirmed: 'bg-blue-100 text-blue-800',
+  completed: 'bg-purple-100 text-purple-800',
+  converted: 'bg-green-100 text-green-800',
+  no_show: 'bg-red-100 text-red-800',
+  cancelled: 'bg-gray-100 text-gray-500',
+}
+
+export const COMMISSION_STATUS_LABEL: Record<CommissionStatus, string> = {
+  pending: 'Pending',
+  invoiced: 'Invoiced',
+  paid: 'Paid',
+  overdue: 'Overdue',
+  waived: 'Waived',
+}
+
+export const COMMISSION_STATUS_COLOR: Record<CommissionStatus, string> = {
+  pending: 'bg-amber-100 text-amber-800',
+  invoiced: 'bg-blue-100 text-blue-800',
+  paid: 'bg-green-100 text-green-800',
+  overdue: 'bg-red-100 text-red-800',
+  waived: 'bg-gray-100 text-gray-500',
+}
+
+export const REWARD_STATUS_LABEL: Record<RewardStatus, string> = {
+  pending: 'Pending',
+  approved: 'Approved',
+  paid: 'Paid',
+  rejected: 'Rejected',
+}
+
+export const REWARD_STATUS_COLOR: Record<RewardStatus, string> = {
+  pending: 'bg-amber-100 text-amber-800',
+  approved: 'bg-blue-100 text-blue-800',
+  paid: 'bg-green-100 text-green-800',
+  rejected: 'bg-red-100 text-red-800',
+}
