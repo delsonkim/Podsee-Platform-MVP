@@ -1,8 +1,10 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { SlotDetail } from '@/lib/public-data'
+import { createClient } from '@/lib/supabase/client'
+import { signInWithGoogle } from '@/lib/auth'
 
 function formatDate(d: string) {
   return new Date(d).toLocaleDateString('en-SG', {
@@ -32,6 +34,31 @@ function duration(start: string, end: string) {
 export default function CentreSlots({ slots }: { slots: SlotDetail[] }) {
   const router = useRouter()
   const [selected, setSelected] = useState<string | null>(null)
+  const [isLoggedIn, setIsLoggedIn] = useState(false)
+  const [checking, setChecking] = useState(false)
+
+  useEffect(() => {
+    const supabase = createClient()
+    supabase.auth.getUser().then(({ data }) => {
+      setIsLoggedIn(!!data.user)
+    })
+  }, [])
+
+  async function handleBookClick() {
+    if (!selected) return
+    setChecking(true)
+
+    // Double-check auth state before navigating
+    const supabase = createClient()
+    const { data } = await supabase.auth.getUser()
+
+    if (data.user) {
+      router.push(`/book/${selected}`)
+    } else {
+      // Not logged in — redirect to Google OAuth, come back to booking page
+      signInWithGoogle(`/book/${selected}`)
+    }
+  }
 
   const slotsByDate = slots.reduce<Record<string, SlotDetail[]>>((acc, slot) => {
     acc[slot.date] = [...(acc[slot.date] ?? []), slot]
@@ -156,10 +183,11 @@ export default function CentreSlots({ slots }: { slots: SlotDetail[] }) {
             )}
           </div>
           <button
-            onClick={() => selected && router.push(`/book/${selected}`)}
-            className="bg-fern text-white font-display font-bold text-sm px-6 py-3 rounded-xl hover:bg-forest transition-colors whitespace-nowrap shadow-lg shadow-fern/25"
+            onClick={handleBookClick}
+            disabled={checking}
+            className="bg-fern text-white font-display font-bold text-sm px-6 py-3 rounded-xl hover:bg-forest transition-colors whitespace-nowrap shadow-lg shadow-fern/25 disabled:opacity-60"
           >
-            Book Trial · S${selectedSlot?.trial_fee}
+            {checking ? 'Loading…' : `Book Trial · S$${selectedSlot?.trial_fee}`}
           </button>
         </div>
       </div>

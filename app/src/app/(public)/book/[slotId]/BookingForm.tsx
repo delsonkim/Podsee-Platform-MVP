@@ -39,9 +39,11 @@ const inputClass =
 export default function BookingForm({
   slot,
   levels,
+  userProfile,
 }: {
   slot: SlotDetail
   levels: Level[]
+  userProfile: { name: string; email: string; phone: string }
 }) {
   const [isPending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
@@ -68,6 +70,23 @@ export default function BookingForm({
   return (
     <form ref={formRef} onSubmit={handleSubmit} className="space-y-5">
       <input type="hidden" name="slot_id" value={slot.id} />
+
+      {/* Logged-in user info from Google */}
+      <div className="bg-mint/50 border border-fern/10 rounded-xl p-4 flex items-center gap-3">
+        <div className="w-9 h-9 bg-fern rounded-full flex items-center justify-center text-white font-display font-bold text-sm shrink-0">
+          {userProfile.name.charAt(0).toUpperCase()}
+        </div>
+        <div className="min-w-0">
+          <p className="font-display font-semibold text-forest text-sm truncate">
+            {userProfile.name}
+          </p>
+          <p className="text-xs text-sage truncate">{userProfile.email}</p>
+        </div>
+      </div>
+
+      {/* Hidden fields for parent info (from Google) */}
+      <input type="hidden" name="parent_name" value={userProfile.name} />
+      <input type="hidden" name="parent_email" value={userProfile.email} />
 
       <div className="grid sm:grid-cols-2 gap-4">
         <Field label="Child's name" required>
@@ -97,34 +116,13 @@ export default function BookingForm({
         </Field>
       </div>
 
-      <div className="grid sm:grid-cols-2 gap-4">
-        <Field label="Your name" required>
-          <input
-            type="text"
-            name="parent_name"
-            required
-            placeholder="E.g. Sarah Tan"
-            className={inputClass}
-          />
-        </Field>
-
-        <Field label="Phone number" required>
-          <input
-            type="tel"
-            name="parent_phone"
-            required
-            placeholder="+65 9123 4567"
-            className={inputClass}
-          />
-        </Field>
-      </div>
-
-      <Field label="Email address" required>
+      <Field label="Phone number" required>
         <input
-          type="email"
-          name="parent_email"
+          type="tel"
+          name="parent_phone"
           required
-          placeholder="you@example.com"
+          defaultValue={userProfile.phone}
+          placeholder="+65 9123 4567"
           className={inputClass}
         />
       </Field>

@@ -1,7 +1,8 @@
 import { getSlotById, getAllLevels } from '@/lib/public-data'
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import BookingForm from './BookingForm'
+import { createClient } from '@/lib/supabase/server'
 
 function formatDate(d: string) {
   return new Date(d).toLocaleDateString('en-SG', {
@@ -26,12 +27,29 @@ export default async function BookingPage({
   params: Promise<{ slotId: string }>
 }) {
   const { slotId } = await params
+
+  // Auth gate: must be logged in to book
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) {
+    // This shouldn't normally happen (CentreSlots redirects to OAuth first),
+    // but just in case someone hits the URL directly
+    redirect(`/centres`)
+  }
+
   const [slot, levels] = await Promise.all([
     getSlotById(slotId),
     Promise.resolve(getAllLevels()),
   ])
 
   if (!slot) notFound()
+
+  // Extract user info from Google profile for pre-filling
+  const userProfile = {
+    name: user.user_metadata?.full_name ?? user.user_metadata?.name ?? '',
+    email: user.email ?? '',
+    phone: user.user_metadata?.phone ?? '',
+  }
 
   return (
     <div className="max-w-4xl mx-auto px-6 py-10">
@@ -94,7 +112,7 @@ export default async function BookingPage({
 
         {/* Right col — booking form */}
         <div className="mt-8 md:mt-0">
-          <BookingForm slot={slot} levels={levels} />
+          <BookingForm slot={slot} levels={levels} userProfile={userProfile} />
         </div>
       </div>
     </div>

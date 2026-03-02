@@ -2,6 +2,8 @@
 
 import { redirect } from 'next/navigation'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { createClient } from '@/lib/supabase/server'
+import { sendBookingConfirmation } from '@/lib/email'
 
 // Generates a readable booking ref: PSE-YYMMDD-XXXX
 function generateRef(): string {
@@ -24,7 +26,33 @@ export async function submitBooking(formData: FormData) {
     throw new Error('Missing required fields')
   }
 
+  // Verify the user is authenticated
+  const userSupabase = await createClient()
+  const { data: { user } } = await userSupabase.auth.getUser()
+  if (!user) {
+    throw new Error('You must be logged in to book a trial.')
+  }
+
   const supabase = createAdminClient()
+
+  // Upsert parent record — link to auth user, update name/phone if changed
+  const { data: parent, error: parentError } = await supabase
+    .from('parents')
+    .upsert(
+      {
+        email: parentEmail,
+        name: parentName,
+        phone: parentPhone || null,
+        auth_user_id: user.id,
+      },
+      { onConflict: 'email' }
+    )
+    .select('id')
+    .single()
+
+  if (parentError) {
+    throw new Error('Could not create your account. Please try again.')
+  }
 
   // Fetch the slot to lock the trial fee and get centre_id
   const { data: slot, error: slotError } = await supabase
@@ -47,6 +75,7 @@ export async function submitBooking(formData: FormData) {
     booking_ref: bookingRef,
     trial_slot_id: slotId,
     centre_id: slot.centre_id,
+    parent_id: parent.id,
     parent_name_at_booking: parentName,
     parent_email_at_booking: parentEmail,
     parent_phone_at_booking: parentPhone || null,
@@ -66,6 +95,33 @@ export async function submitBooking(formData: FormData) {
     .from('trial_slots')
     .update({ spots_remaining: Math.max(0, slot.spots_remaining - 1) })
     .eq('id', slotId)
+
+  // Send confirmation email (fire-and-forget — don't block the redirect)
+  const { data: fullSlot } = await supabase
+    .from('trial_slots')
+    .select('date, start_time, end_time, subjects(name), centres(name, slug, address, nearest_mrt)')
+    .eq('id', slotId)
+    .single()
+
+  if (fullSlot) {
+    const s = fullSlot as any
+    sendBookingConfirmation({
+      parentName,
+      parentEmail,
+      childName,
+      childLevel,
+      bookingRef,
+      centreName: s.centres?.name ?? '',
+      centreAddress: s.centres?.address ?? null,
+      centreSlug: s.centres?.slug ?? '',
+      nearestMrt: s.centres?.nearest_mrt ?? null,
+      subjectName: s.subjects?.name ?? '',
+      date: s.date,
+      startTime: s.start_time,
+      endTime: s.end_time,
+      trialFee: Number(slot.trial_fee),
+    }).catch(() => {}) // swallow — email failure shouldn't break booking
+  }
 
   redirect(`/book/success?ref=${bookingRef}`)
 }

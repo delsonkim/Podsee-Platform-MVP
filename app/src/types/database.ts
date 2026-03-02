@@ -54,6 +54,7 @@ export interface Centre {
   commitment_terms: string | null
   notice_period_terms: string | null
   payment_terms: string | null
+  other_policies: string | null
   parking_info: string | null
   nearest_mrt: string | null
   years_operating: number | null
@@ -68,7 +69,10 @@ export interface TrialSlot {
   id: string
   centre_id: string
   subject_id: string
-  level_id: string
+  level_id: string | null
+  age_min: number | null
+  age_max: number | null
+  custom_level: string | null
   date: string
   start_time: string
   end_time: string
