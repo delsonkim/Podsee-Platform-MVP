@@ -4,6 +4,19 @@ import Link from 'next/link'
 import BookingForm from './BookingForm'
 import { createClient } from '@/lib/supabase/server'
 
+function centreGradient(slug: string): string {
+  const gradients = [
+    'from-forest/80 to-fern/60',
+    'from-fern/70 to-mint',
+    'from-forest to-sage/70',
+    'from-sage/60 to-fern/80',
+    'from-fern/80 to-forest/60',
+  ]
+  let hash = 0
+  for (const ch of slug) hash = ((hash << 5) - hash + ch.charCodeAt(0)) | 0
+  return gradients[Math.abs(hash) % gradients.length]
+}
+
 function formatDate(d: string) {
   return new Date(d).toLocaleDateString('en-SG', {
     weekday: 'long',
@@ -28,14 +41,9 @@ export default async function BookingPage({
 }) {
   const { slotId } = await params
 
-  // Auth gate: must be logged in to book
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) {
-    // This shouldn't normally happen (CentreSlots redirects to OAuth first),
-    // but just in case someone hits the URL directly
-    redirect(`/centres`)
-  }
+  if (!user) redirect(`/centres`)
 
   const [slot, levels] = await Promise.all([
     getSlotById(slotId),
@@ -44,7 +52,6 @@ export default async function BookingPage({
 
   if (!slot) notFound()
 
-  // Extract user info from Google profile for pre-filling
   const userProfile = {
     name: user.user_metadata?.full_name ?? user.user_metadata?.name ?? '',
     email: user.email ?? '',
@@ -52,26 +59,22 @@ export default async function BookingPage({
   }
 
   return (
-    <div className="max-w-4xl mx-auto px-6 py-10">
-      {/* Back */}
-      <div className="flex items-center gap-3 mb-8">
-        <Link
-          href={`/centres/${slot.centre.slug}`}
-          className="w-8 h-8 rounded-lg border border-linen bg-white flex items-center justify-center text-forest text-sm hover:bg-paper transition-colors shrink-0"
-          aria-label="Back"
-        >
-          ←
+    <div className="max-w-4xl mx-auto px-6 py-8">
+      {/* Breadcrumb */}
+      <p className="text-xs text-sage mb-6 font-display">
+        <Link href="/centres" className="hover:text-fern transition-colors">Browse</Link>
+        <span className="mx-1.5">›</span>
+        <Link href={`/centres/${slot.centre.slug}`} className="hover:text-fern transition-colors">
+          {slot.centre.name}
         </Link>
-        <div>
-          <p className="text-xs text-sage">Booking Trial</p>
-          <p className="font-display font-bold text-forest text-sm">{slot.centre.name}</p>
-        </div>
-      </div>
+        <span className="mx-1.5">›</span>
+        <span className="text-forest font-semibold">Complete booking</span>
+      </p>
 
       {/* Desktop: 2-col | Mobile: single col */}
       <div className="md:grid md:grid-cols-[1fr_1.4fr] md:gap-12 md:items-start">
 
-        {/* Left col — heading + slot summary (sticky on desktop) */}
+        {/* Left col — slot summary (sticky on desktop) */}
         <div className="md:sticky md:top-24">
           <h1 className="font-display font-extrabold text-2xl text-forest mb-1">
             Book your trial class
@@ -80,33 +83,39 @@ export default async function BookingPage({
             We&apos;ll confirm your slot within 1 business day via email.
           </p>
 
-          <div className="bg-paper border border-linen rounded-2xl p-5">
-            <p className="text-xs font-display font-semibold text-sage uppercase tracking-widest mb-4">
-              Your trial
-            </p>
-            <dl className="space-y-2.5">
-              {[
-                { label: 'Centre', value: slot.centre.name },
-                { label: 'Subject', value: slot.subject.name },
-                { label: 'Level', value: slot.level.label },
-                { label: 'Date', value: formatDate(slot.date) },
-                { label: 'Time', value: `${formatTime(slot.start_time)} – ${formatTime(slot.end_time)}` },
-              ].map(({ label, value }) => (
-                <div key={label} className="flex justify-between text-sm gap-4">
-                  <dt className="text-sage shrink-0">{label}</dt>
-                  <dd className="font-medium text-forest text-right">{value}</dd>
-                </div>
-              ))}
-              <div className="flex justify-between text-sm pt-2.5 border-t border-linen">
-                <dt className="text-sage">Trial fee</dt>
-                <dd className="font-display font-bold text-forest">S${slot.trial_fee}</dd>
-              </div>
-            </dl>
-            {slot.spots_remaining <= 1 && slot.spots_remaining > 0 && (
-              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-4">
-                Only {slot.spots_remaining} spot left for this session
+          <div className="border border-linen rounded-2xl overflow-hidden">
+            {/* Gradient banner */}
+            <div className={`h-16 bg-gradient-to-br ${centreGradient(slot.centre.slug)}`} />
+
+            <div className="p-5">
+              <p className="text-xs font-display font-semibold text-sage uppercase tracking-widest mb-4">
+                Your trial
               </p>
-            )}
+              <dl className="space-y-2.5">
+                {[
+                  { label: 'Centre', value: slot.centre.name },
+                  { label: 'Subject', value: slot.subject.name },
+                  { label: 'Level', value: slot.level.label },
+                  { label: 'Date', value: formatDate(slot.date) },
+                  { label: 'Time', value: `${formatTime(slot.start_time)} – ${formatTime(slot.end_time)}` },
+                ].map(({ label, value }) => (
+                  <div key={label} className="flex justify-between text-sm gap-4">
+                    <dt className="text-sage shrink-0">{label}</dt>
+                    <dd className="font-medium text-forest text-right">{value}</dd>
+                  </div>
+                ))}
+                <div className="flex justify-between pt-2.5 border-t border-linen">
+                  <dt className="text-sm text-sage">Trial fee</dt>
+                  <dd className="font-display font-bold text-lg text-forest">S${slot.trial_fee}</dd>
+                </div>
+              </dl>
+
+              {slot.spots_remaining <= 3 && slot.spots_remaining > 0 && (
+                <p className="text-xs text-red-600 font-display font-semibold bg-red-50 border border-red-200 rounded-lg px-3 py-2 mt-4">
+                  Only {slot.spots_remaining} spot{slot.spots_remaining === 1 ? '' : 's'} left!
+                </p>
+              )}
+            </div>
           </div>
         </div>
 

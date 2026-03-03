@@ -3,11 +3,14 @@ export type ParentReportedEnrolment = 'enrolled' | 'not_enrolled'
 export type CommissionStatus = 'pending' | 'invoiced' | 'paid' | 'overdue' | 'waived'
 export type RewardStatus = 'pending' | 'approved' | 'paid' | 'rejected'
 export type LevelGroup = 'primary' | 'secondary' | 'jc' | 'other'
+export type CentreUserRole = 'owner' | 'staff'
+export type AdminUserRole = 'admin' | 'superadmin'
 
 export interface Subject {
   id: string
   name: string
   sort_order: number
+  is_custom: boolean
   created_at: string
 }
 
@@ -59,10 +62,29 @@ export interface Centre {
   nearest_mrt: string | null
   years_operating: number | null
   track_record: string | null
+  contact_email: string | null
+  hero_image_url: string | null
   is_active: boolean
   is_paused: boolean
   created_at: string
   updated_at: string
+}
+
+export interface CentreUser {
+  id: string
+  auth_user_id: string | null
+  centre_id: string
+  role: CentreUserRole
+  email: string
+  created_at: string
+}
+
+export interface AdminUser {
+  id: string
+  auth_user_id: string | null
+  email: string
+  role: AdminUserRole
+  created_at: string
 }
 
 export interface TrialSlot {

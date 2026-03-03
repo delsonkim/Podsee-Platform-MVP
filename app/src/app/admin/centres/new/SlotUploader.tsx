@@ -1,6 +1,9 @@
 'use client'
 
 import { useState, useRef } from 'react'
+import type { AIParseResult } from '@/types/ai-parser'
+import { parseSchedule } from './actions'
+import SlotClarificationTable from './SlotClarificationTable'
 
 interface Subject {
   id: string
@@ -41,6 +44,8 @@ interface Props {
   onSlotsReady: (slots: ParsedSlot[]) => void
 }
 
+// ── Fallback rule-based parser (kept for when AI is unavailable) ──
+
 function normalise(s: string): string {
   return s.toLowerCase().trim()
 }
@@ -48,38 +53,22 @@ function normalise(s: string): string {
 function matchSubject(raw: string, subjects: Subject[]): Subject | null {
   const n = normalise(raw)
   if (!n) return null
-  // Exact match on name
   const exact = subjects.find((s) => normalise(s.name) === n)
   if (exact) return exact
-  // Starts with
   const starts = subjects.find((s) => normalise(s.name).startsWith(n))
   if (starts) return starts
-  // Contains
   const contains = subjects.find((s) => normalise(s.name).includes(n))
   if (contains) return contains
-  // Known aliases
   const aliases: Record<string, string> = {
-    math: 'Mathematics',
-    maths: 'Mathematics',
-    'e math': 'Elementary Mathematics',
-    'a math': 'Additional Mathematics',
-    'emath': 'Elementary Mathematics',
-    'amath': 'Additional Mathematics',
-    english: 'English Language',
-    chinese: 'Chinese Language',
-    malay: 'Malay Language',
-    tamil: 'Tamil Language',
-    bio: 'Biology',
-    chem: 'Chemistry',
-    phys: 'Physics',
-    lit: 'Literature',
-    geog: 'Geography',
-    hist: 'History',
-    gp: 'General Paper',
-    ss: 'Social Studies',
-    coding: 'Coding / Programming',
-    poa: 'Principles of Accounts',
-    econs: 'Economics',
+    math: 'Mathematics', maths: 'Mathematics',
+    'e math': 'Elementary Mathematics', 'a math': 'Additional Mathematics',
+    emath: 'Elementary Mathematics', amath: 'Additional Mathematics',
+    english: 'English Language', chinese: 'Chinese Language',
+    malay: 'Malay Language', tamil: 'Tamil Language',
+    bio: 'Biology', chem: 'Chemistry', phys: 'Physics',
+    lit: 'Literature', geog: 'Geography', hist: 'History',
+    gp: 'General Paper', ss: 'Social Studies',
+    coding: 'Coding / Programming', poa: 'Principles of Accounts', econs: 'Economics',
   }
   const aliased = aliases[n]
   if (aliased) return subjects.find((s) => normalise(s.name) === normalise(aliased)) ?? null
@@ -89,60 +78,27 @@ function matchSubject(raw: string, subjects: Subject[]): Subject | null {
 function matchLevel(raw: string, levels: Level[]): { level: Level | null; ageMin: number | null; ageMax: number | null; customLevel: string | null } {
   const n = normalise(raw)
   if (!n) return { level: null, ageMin: null, ageMax: null, customLevel: null }
-
-  // Match by code (P4, SEC1, JC2, BEG, IP1, NA1, etc.)
   const byCode = levels.find((l) => normalise(l.code) === n)
   if (byCode) return { level: byCode, ageMin: null, ageMax: null, customLevel: null }
-
-  // Match by label (Primary 4, Secondary 1, IP Year 1, Normal Academic 1, etc.)
   const byLabel = levels.find((l) => normalise(l.label) === n)
   if (byLabel) return { level: byLabel, ageMin: null, ageMax: null, customLevel: null }
-
-  // "Primary 4" shorthand "P4" → try prefix match
   const p = n.match(/^p(\d)$/)
-  if (p) {
-    const match = levels.find((l) => normalise(l.code) === `p${p[1]}`)
-    if (match) return { level: match, ageMin: null, ageMax: null, customLevel: null }
-  }
-
+  if (p) { const m = levels.find((l) => normalise(l.code) === `p${p[1]}`); if (m) return { level: m, ageMin: null, ageMax: null, customLevel: null } }
   const sec = n.match(/^sec\s*(\d)$/)
-  if (sec) {
-    const match = levels.find((l) => normalise(l.code) === `sec${sec[1]}`)
-    if (match) return { level: match, ageMin: null, ageMax: null, customLevel: null }
-  }
-
-  // IP shorthand
+  if (sec) { const m = levels.find((l) => normalise(l.code) === `sec${sec[1]}`); if (m) return { level: m, ageMin: null, ageMax: null, customLevel: null } }
   const ip = n.match(/^ip\s*(?:year\s*)?(\d)$/)
-  if (ip) {
-    const match = levels.find((l) => normalise(l.code) === `ip${ip[1]}`)
-    if (match) return { level: match, ageMin: null, ageMax: null, customLevel: null }
-  }
-
-  // Normal Academic shorthand
+  if (ip) { const m = levels.find((l) => normalise(l.code) === `ip${ip[1]}`); if (m) return { level: m, ageMin: null, ageMax: null, customLevel: null } }
   const na = n.match(/^(?:n\(?a\)?\s*|normal\s*(?:academic\s*)?)(\d)$/i)
-  if (na) {
-    const match = levels.find((l) => normalise(l.code) === `na${na[1]}`)
-    if (match) return { level: match, ageMin: null, ageMax: null, customLevel: null }
-  }
-
-  // Age range: "Ages 6-9", "6-9", "Ages 6 to 9"
+  if (na) { const m = levels.find((l) => normalise(l.code) === `na${na[1]}`); if (m) return { level: m, ageMin: null, ageMax: null, customLevel: null } }
   const ageMatch = n.match(/(?:ages?\s*)?(\d+)\s*[-–to]+\s*(\d+)/)
-  if (ageMatch) {
-    return { level: null, ageMin: parseInt(ageMatch[1]), ageMax: parseInt(ageMatch[2]), customLevel: null }
-  }
-
-  // Fallback: use as custom_level
+  if (ageMatch) return { level: null, ageMin: parseInt(ageMatch[1]), ageMax: parseInt(ageMatch[2]), customLevel: null }
   return { level: null, ageMin: null, ageMax: null, customLevel: raw.trim() }
 }
 
 function parseTime(raw: string): string | null {
   const t = raw.trim()
-
-  // HH:mm or H:mm
   const hm = t.match(/^(\d{1,2}):(\d{2})$/)
   if (hm) return `${hm[1].padStart(2, '0')}:${hm[2]}`
-
-  // 9am, 10pm, 9:30am
   const ampm = t.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/i)
   if (ampm) {
     let hour = parseInt(ampm[1])
@@ -152,45 +108,28 @@ function parseTime(raw: string): string | null {
     if (period === 'am' && hour === 12) hour = 0
     return `${String(hour).padStart(2, '0')}:${min}`
   }
-
   return null
 }
 
 function parseDate(raw: string): string | null {
   const d = raw.trim()
-
-  // YYYY-MM-DD
   if (/^\d{4}-\d{2}-\d{2}$/.test(d)) return d
-
-  // DD/MM/YYYY or DD-MM-YYYY
   const dmy = d.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/)
   if (dmy) return `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`
-
-  // Try native Date parse
   const parsed = new Date(d)
-  if (!isNaN(parsed.getTime())) {
-    return parsed.toISOString().slice(0, 10)
-  }
-
+  if (!isNaN(parsed.getTime())) return parsed.toISOString().slice(0, 10)
   return null
 }
 
-function parseRows(rawText: string, subjects: Subject[], levels: Level[]): ParsedSlot[] {
-  const lines = rawText
-    .split('\n')
-    .map((l) => l.trim())
-    .filter((l) => l.length > 0)
-
-  // Detect if first row is header
+function parseRowsFallback(rawText: string, subjects: Subject[], levels: Level[]): ParsedSlot[] {
+  const lines = rawText.split('\n').map((l) => l.trim()).filter((l) => l.length > 0)
   const firstLine = normalise(lines[0] ?? '')
   const isHeader = firstLine.includes('subject') || firstLine.includes('level') || firstLine.includes('date')
   const dataLines = isHeader ? lines.slice(1) : lines
 
   return dataLines.map((line) => {
-    // Split by tab (from paste) or comma (from CSV)
     const cols = line.includes('\t') ? line.split('\t') : line.split(',')
     const [rawSubject, rawLevel, rawDate, rawStart, rawEnd, rawFee, rawMax, ...rawNotes] = cols.map((c) => c.trim())
-
     const subjectMatch = matchSubject(rawSubject ?? '', subjects)
     const levelMatch = matchLevel(rawLevel ?? '', levels)
     const date = parseDate(rawDate ?? '')
@@ -228,11 +167,47 @@ function parseRows(rawText: string, subjects: Subject[], levels: Level[]): Parse
   })
 }
 
+// ── Component ────────────────────────────────────────────────
+
+type Phase = 'input' | 'parsing' | 'review'
+
 export default function SlotUploader({ subjects, levels, onSlotsReady }: Props) {
   const [tab, setTab] = useState<'csv' | 'paste'>('csv')
   const [pasteText, setPasteText] = useState('')
-  const [parsed, setParsed] = useState<ParsedSlot[] | null>(null)
+  const [phase, setPhase] = useState<Phase>('input')
+  const [aiResult, setAiResult] = useState<AIParseResult | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+
+  async function handleParse(rawText: string) {
+    setPhase('parsing')
+    try {
+      const result = await parseSchedule(rawText)
+
+      // If AI returned slots, show the clarification table
+      if (result.slots.length > 0) {
+        setAiResult(result)
+        setPhase('review')
+        return
+      }
+
+      // AI returned no slots — try fallback
+      const fallbackSlots = parseRowsFallback(rawText, subjects, levels)
+      if (fallbackSlots.length > 0) {
+        // Convert fallback to AIParseResult format for the clarification table
+        setAiResult(fallbackToAIResult(fallbackSlots, result.fallback_reason || 'AI returned no results'))
+        setPhase('review')
+      } else {
+        // Nothing parseable
+        setAiResult({ slots: [], skipped_rows: [], used_ai: false, fallback_reason: 'No class data found in the uploaded schedule' })
+        setPhase('review')
+      }
+    } catch {
+      // Network or other error — use fallback
+      const fallbackSlots = parseRowsFallback(rawText, subjects, levels)
+      setAiResult(fallbackToAIResult(fallbackSlots, 'Connection error'))
+      setPhase('review')
+    }
+  }
 
   function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -240,16 +215,21 @@ export default function SlotUploader({ subjects, levels, onSlotsReady }: Props) 
     const reader = new FileReader()
     reader.onload = (ev) => {
       const text = ev.target?.result as string
-      const rows = parseRows(text, subjects, levels)
-      setParsed(rows)
+      handleParse(text)
     }
     reader.readAsText(file)
   }
 
-  function handlePaste() {
+  function handlePasteSubmit() {
     if (!pasteText.trim()) return
-    const rows = parseRows(pasteText, subjects, levels)
-    setParsed(rows)
+    handleParse(pasteText)
+  }
+
+  function restart() {
+    setPhase('input')
+    setAiResult(null)
+    setPasteText('')
+    if (fileRef.current) fileRef.current.value = ''
   }
 
   function downloadTemplate() {
@@ -265,170 +245,150 @@ export default function SlotUploader({ subjects, levels, onSlotsReady }: Props) 
     URL.revokeObjectURL(url)
   }
 
-  function confirmImport() {
-    if (!parsed) return
-    const valid = parsed.filter((s) => s.status !== 'error')
-    onSlotsReady(valid)
-  }
-
-  const okCount = parsed?.filter((s) => s.status === 'ok').length ?? 0
-  const warnCount = parsed?.filter((s) => s.status === 'warning').length ?? 0
-  const errCount = parsed?.filter((s) => s.status === 'error').length ?? 0
-
   return (
     <div className="space-y-4">
-      {/* Tab switcher */}
-      <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
-        <button
-          type="button"
-          onClick={() => { setTab('csv'); setParsed(null) }}
-          className={`flex-1 text-xs font-medium py-2 rounded-md transition-colors ${
-            tab === 'csv' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          Upload CSV
-        </button>
-        <button
-          type="button"
-          onClick={() => { setTab('paste'); setParsed(null) }}
-          className={`flex-1 text-xs font-medium py-2 rounded-md transition-colors ${
-            tab === 'paste' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          Paste from Sheets
-        </button>
-      </div>
-
-      {/* Download template */}
-      <button
-        type="button"
-        onClick={downloadTemplate}
-        className="text-xs text-blue-600 hover:text-blue-700 font-medium"
-      >
-        Download CSV template
-      </button>
-
-      {/* CSV upload */}
-      {tab === 'csv' && !parsed && (
-        <div>
-          <input ref={fileRef} type="file" accept=".csv,.txt" onChange={handleFileUpload} className="hidden" />
-          <button
-            type="button"
-            onClick={() => fileRef.current?.click()}
-            className="w-full border-2 border-dashed border-gray-200 rounded-lg py-8 text-sm text-gray-500 hover:text-gray-700 hover:border-gray-300 transition-colors"
-          >
-            Click to upload CSV file
-          </button>
-        </div>
-      )}
-
-      {/* Paste */}
-      {tab === 'paste' && !parsed && (
-        <div>
-          <textarea
-            value={pasteText}
-            onChange={(e) => setPasteText(e.target.value)}
-            rows={6}
-            placeholder={"Subject\tLevel\tDate\tStart Time\tEnd Time\tFee\tMax Students\tNotes\nMathematics\tPrimary 4\t2026-03-15\t09:00\t10:00\t25\t4\tBring calculator"}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400"
-          />
-          <button
-            type="button"
-            onClick={handlePaste}
-            disabled={!pasteText.trim()}
-            className={`mt-2 text-sm font-medium px-4 py-2 rounded-lg transition-colors ${
-              pasteText.trim()
-                ? 'bg-gray-900 text-white hover:bg-gray-800'
-                : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-            }`}
-          >
-            Parse data
-          </button>
-        </div>
-      )}
-
-      {/* Preview table */}
-      {parsed && (
-        <div>
-          <div className="flex items-center gap-3 mb-3">
-            <span className="text-xs text-gray-500">
-              {parsed.length} row{parsed.length !== 1 ? 's' : ''} parsed:
-            </span>
-            {okCount > 0 && <span className="text-xs text-green-600 font-medium">{okCount} ready</span>}
-            {warnCount > 0 && <span className="text-xs text-amber-600 font-medium">{warnCount} warnings</span>}
-            {errCount > 0 && <span className="text-xs text-red-600 font-medium">{errCount} errors</span>}
+      {/* Input phase */}
+      {phase === 'input' && (
+        <>
+          {/* Tab switcher */}
+          <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+            <button
+              type="button"
+              onClick={() => setTab('csv')}
+              className={`flex-1 text-xs font-medium py-2 rounded-md transition-colors ${
+                tab === 'csv' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Upload CSV
+            </button>
+            <button
+              type="button"
+              onClick={() => setTab('paste')}
+              className={`flex-1 text-xs font-medium py-2 rounded-md transition-colors ${
+                tab === 'paste' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Paste from Sheets
+            </button>
           </div>
 
-          <div className="border border-gray-200 rounded-lg overflow-hidden overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead className="bg-gray-50 border-b border-gray-200">
-                <tr>
-                  <th className="px-3 py-2 text-left font-medium text-gray-500 w-6"></th>
-                  <th className="px-3 py-2 text-left font-medium text-gray-500">Subject</th>
-                  <th className="px-3 py-2 text-left font-medium text-gray-500">Level</th>
-                  <th className="px-3 py-2 text-left font-medium text-gray-500">Date</th>
-                  <th className="px-3 py-2 text-left font-medium text-gray-500">Time</th>
-                  <th className="px-3 py-2 text-left font-medium text-gray-500">Fee</th>
-                  <th className="px-3 py-2 text-left font-medium text-gray-500">Max</th>
-                  <th className="px-3 py-2 text-left font-medium text-gray-500">Notes</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {parsed.map((slot, i) => (
-                  <tr key={i} className={slot.status === 'error' ? 'bg-red-50' : slot.status === 'warning' ? 'bg-amber-50' : ''}>
-                    <td className="px-3 py-2">
-                      {slot.status === 'ok' && <span className="text-green-500">&#10003;</span>}
-                      {slot.status === 'warning' && <span className="text-amber-500">&#9888;</span>}
-                      {slot.status === 'error' && <span className="text-red-500">&#10007;</span>}
-                    </td>
-                    <td className="px-3 py-2 text-gray-900">{slot.subject_name}</td>
-                    <td className="px-3 py-2 text-gray-900">
-                      {slot.level_label}
-                      {slot.age_min != null && slot.age_max != null && `Ages ${slot.age_min}-${slot.age_max}`}
-                      {slot.custom_level && slot.custom_level}
-                    </td>
-                    <td className="px-3 py-2 text-gray-600">{slot.date}</td>
-                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{slot.start_time} – {slot.end_time}</td>
-                    <td className="px-3 py-2 text-gray-600">S${slot.trial_fee}</td>
-                    <td className="px-3 py-2 text-gray-600">{slot.max_students}</td>
-                    <td className="px-3 py-2 text-gray-400 truncate max-w-[120px]">{slot.notes}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <button
+            type="button"
+            onClick={downloadTemplate}
+            className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+          >
+            Download CSV template
+          </button>
 
-          {parsed.some((s) => s.issue) && (
-            <div className="mt-2 space-y-1">
-              {parsed.filter((s) => s.issue).map((s, i) => (
-                <p key={i} className={`text-xs ${s.status === 'error' ? 'text-red-600' : 'text-amber-600'}`}>
-                  Row {i + 1}: {s.issue}
-                </p>
-              ))}
+          {tab === 'csv' && (
+            <div>
+              <input ref={fileRef} type="file" accept=".csv,.txt,.xlsx" onChange={handleFileUpload} className="hidden" />
+              <button
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                className="w-full border-2 border-dashed border-gray-200 rounded-lg py-8 text-sm text-gray-500 hover:text-gray-700 hover:border-gray-300 transition-colors"
+              >
+                Click to upload CSV file
+              </button>
             </div>
           )}
 
-          <div className="flex items-center gap-3 mt-4">
-            <button
-              type="button"
-              onClick={() => setParsed(null)}
-              className="text-sm text-gray-500 hover:text-gray-700 font-medium"
-            >
-              Re-upload
-            </button>
-            {okCount + warnCount > 0 && (
+          {tab === 'paste' && (
+            <div>
+              <textarea
+                value={pasteText}
+                onChange={(e) => setPasteText(e.target.value)}
+                rows={6}
+                placeholder="Paste your schedule here — any format works. We'll figure out the columns automatically."
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400"
+              />
               <button
                 type="button"
-                onClick={confirmImport}
-                className="text-sm font-medium px-4 py-2 rounded-lg bg-gray-900 text-white hover:bg-gray-800 transition-colors"
+                onClick={handlePasteSubmit}
+                disabled={!pasteText.trim()}
+                className={`mt-2 text-sm font-medium px-4 py-2 rounded-lg transition-colors ${
+                  pasteText.trim()
+                    ? 'bg-gray-900 text-white hover:bg-gray-800'
+                    : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                }`}
               >
-                Import {okCount + warnCount} slot{okCount + warnCount !== 1 ? 's' : ''}
-                {errCount > 0 && ` (skip ${errCount} error${errCount !== 1 ? 's' : ''})`}
+                Parse schedule
               </button>
-            )}
-          </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Parsing phase — loading */}
+      {phase === 'parsing' && (
+        <div className="flex flex-col items-center justify-center py-12 space-y-3">
+          <div className="w-6 h-6 border-2 border-gray-300 border-t-gray-900 rounded-full animate-spin" />
+          <p className="text-sm text-gray-500">Analysing your schedule...</p>
         </div>
+      )}
+
+      {/* Review phase — clarification table */}
+      {phase === 'review' && aiResult && (
+        <SlotClarificationTable
+          result={aiResult}
+          subjects={subjects}
+          levels={levels}
+          onConfirm={onSlotsReady}
+          onRestart={restart}
+        />
       )}
     </div>
   )
+}
+
+// ── Helper: convert fallback ParsedSlot[] to AIParseResult ──
+
+function fallbackToAIResult(slots: ParsedSlot[], reason: string): AIParseResult {
+  return {
+    slots: slots.map((s) => ({
+      subject: {
+        value: s.subject_name,
+        confidence: s.subject_id ? 'confirmed' as const : 'needs_review' as const,
+        match_id: s.subject_id,
+        raw_text: s.raw_subject_text,
+      },
+      level: {
+        value: s.level_label || s.custom_level || '',
+        confidence: s.level_id ? 'confirmed' as const : (s.age_min !== null || s.custom_level ? 'confirmed' as const : 'needs_review' as const),
+        match_id: s.level_id,
+        raw_text: s.level_label,
+      },
+      age_min: { value: s.age_min, confidence: 'confirmed' as const },
+      age_max: { value: s.age_max, confidence: 'confirmed' as const },
+      date: {
+        value: s.date,
+        confidence: s.date ? 'confirmed' as const : 'needs_review' as const,
+        raw_text: s.date,
+      },
+      start_time: {
+        value: s.start_time,
+        confidence: s.start_time ? 'confirmed' as const : 'needs_review' as const,
+        raw_text: s.start_time,
+      },
+      end_time: {
+        value: s.end_time,
+        confidence: s.end_time ? 'confirmed' as const : 'needs_review' as const,
+        raw_text: s.end_time,
+      },
+      trial_fee: {
+        value: s.trial_fee,
+        confidence: s.trial_fee > 0 ? 'confirmed' as const : 'needs_review' as const,
+        raw_text: String(s.trial_fee),
+      },
+      max_students: {
+        value: s.max_students,
+        confidence: s.max_students > 0 ? 'confirmed' as const : 'needs_review' as const,
+        raw_text: String(s.max_students),
+      },
+      notes: s.notes,
+    })),
+    skipped_rows: [],
+    used_ai: false,
+    fallback_reason: reason,
+  }
 }

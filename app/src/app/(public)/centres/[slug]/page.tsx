@@ -1,43 +1,55 @@
 import { getCentreBySlug } from '@/lib/public-data'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
+import Image from 'next/image'
 import CentreSlots from './CentreSlots'
+import ExpandableText from './ExpandableText'
 
-function Section({
-  title,
-  alt,
-  children,
-}: {
-  title: string
-  alt?: boolean
-  children: React.ReactNode
-}) {
-  return (
-    <section className={`px-6 py-6 border-b border-linen ${alt ? 'bg-paper' : 'bg-white'}`}>
-      <p className="text-xs font-display font-semibold text-sage uppercase tracking-widest mb-4">
-        {title}
-      </p>
-      {children}
-    </section>
-  )
+export const revalidate = 60
+
+/* ── Gradient placeholder (swap for <Image> when uploads exist) ── */
+function centreGradient(slug: string): string {
+  const gradients = [
+    'from-forest/80 to-fern/60',
+    'from-fern/70 to-mint',
+    'from-forest to-sage/70',
+    'from-sage/60 to-fern/80',
+    'from-fern/80 to-forest/60',
+  ]
+  let hash = 0
+  for (const ch of slug) hash = ((hash << 5) - hash + ch.charCodeAt(0)) | 0
+  return gradients[Math.abs(hash) % gradients.length]
 }
 
-function PolicyCard({ title, body }: { title: string; body: string | null }) {
+/* ── Accordion policy row ── */
+function PolicyAccordion({ title, body }: { title: string; body: string | null }) {
   if (!body) return null
   return (
-    <div className="bg-white border border-linen rounded-xl p-4">
-      <p className="font-display font-bold text-forest text-xs mb-1.5">{title}</p>
-      <p className="text-xs text-sage leading-relaxed">{body}</p>
-    </div>
+    <details className="group border-b border-linen last:border-0">
+      <summary className="flex items-center justify-between py-3.5">
+        <span className="font-display font-semibold text-forest text-sm">{title}</span>
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 16 16"
+          fill="none"
+          className="text-sage transition-transform duration-200 group-open:rotate-180 shrink-0"
+        >
+          <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </summary>
+      <p className="text-sm text-sage leading-relaxed pb-3.5 pr-4">{body}</p>
+    </details>
   )
 }
 
+/* ── Info row for Getting There ── */
 function InfoRow({ label, value }: { label: string; value: string | null }) {
   if (!value) return null
   return (
     <div className="flex gap-4 py-2.5 border-b border-linen last:border-0">
-      <dt className="w-24 shrink-0 text-xs text-sage">{label}</dt>
-      <dd className="text-xs text-forest leading-relaxed">{value}</dd>
+      <dt className="w-24 shrink-0 text-xs font-display font-semibold text-sage">{label}</dt>
+      <dd className="text-sm text-forest leading-relaxed">{value}</dd>
     </div>
   )
 }
@@ -51,6 +63,11 @@ export default async function CentreProfilePage({
   const centre = await getCentreBySlug(slug)
   if (!centre) notFound()
 
+  const minFee =
+    centre.slots.length > 0
+      ? Math.min(...centre.slots.map((s) => Number(s.trial_fee)))
+      : null
+
   const hasPolicies =
     centre.replacement_class_policy ||
     centre.makeup_class_policy ||
@@ -63,142 +80,242 @@ export default async function CentreProfilePage({
 
   return (
     <div className="bg-white">
-      {/* Back nav */}
-      <div className="px-6 pt-5 pb-0 flex items-center gap-3 bg-parchment border-b border-linen">
+      {/* ── Hero (full-width, ClassPass style) ── */}
+      <div className="relative h-52 sm:h-64 overflow-hidden">
+        {centre.hero_image_url ? (
+          <Image
+            src={centre.hero_image_url}
+            alt={centre.name}
+            fill
+            className="object-cover"
+            priority
+          />
+        ) : (
+          <div className={`h-full bg-gradient-to-br ${centreGradient(slug)}`} />
+        )}
         <Link
           href="/centres"
-          className="w-8 h-8 rounded-lg border border-linen bg-white flex items-center justify-center text-forest text-sm hover:bg-paper transition-colors shrink-0"
-          aria-label="Back"
+          className="absolute top-4 left-4 w-10 h-10 rounded-full bg-white/90 backdrop-blur flex items-center justify-center text-forest hover:bg-white transition-colors shadow-sm z-10"
+          aria-label="Back to centres"
         >
-          ←
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+            <path d="M12 15l-5-5 5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
         </Link>
-        <div className="pb-4">
-          <p className="text-xs text-sage">Centre Profile</p>
-          <p className="font-display font-bold text-forest text-base leading-tight">{centre.name}</p>
-        </div>
       </div>
 
-      {/* Centre header */}
-      <div className="px-6 py-5 border-b border-linen bg-parchment">
+      {/* ── Centre header (ClassPass pattern) ── */}
+      <div className="px-6 py-5 border-b border-linen">
         <div className="max-w-5xl mx-auto">
-          <div className="flex items-start justify-between gap-3 mb-2">
-            <div className="flex flex-wrap gap-2">
-              {centre.years_operating && (
-                <span className="text-xs bg-white border border-linen text-sage rounded-full px-3 py-1">
-                  {centre.years_operating} years operating
-                </span>
-              )}
-              {centre.class_size && (
-                <span className="text-xs bg-white border border-linen text-sage rounded-full px-3 py-1">
-                  Max {centre.class_size} per class
-                </span>
-              )}
-            </div>
-          </div>
-          <p className="text-xs text-sage mb-2">{centre.area}</p>
-          <div className="flex flex-wrap gap-1.5">
-            {centre.subjects.map((s) => (
-              <span
-                key={s.id}
-                className="text-xs bg-mint text-fern border border-fern/15 rounded-full px-2.5 py-0.5 font-display font-semibold"
-              >
-                {s.name}
+          <h1 className="font-display font-extrabold text-2xl sm:text-3xl text-forest mb-1">
+            {centre.name}
+          </h1>
+          <p className="text-sm text-sage mb-2">{centre.area}</p>
+
+          {/* Subjects as inline dot-separated text (ClassPass style) */}
+          {centre.subjects.length > 0 && (
+            <p className="text-sm text-forest/80 mb-3">
+              {centre.subjects.map((s) => s.name).join(' · ')}
+            </p>
+          )}
+
+          {/* Social proof / urgency */}
+          {centre.slots.length > 0 && (
+            <p className="text-sm text-amber font-display font-semibold mb-3">
+              {centre.slots.length} trial slot{centre.slots.length === 1 ? '' : 's'} available
+            </p>
+          )}
+
+          {/* Trust badges row */}
+          <div className="flex flex-wrap gap-2">
+            {centre.years_operating && (
+              <span className="text-xs bg-paper border border-linen text-sage rounded-full px-3 py-1 font-display font-medium">
+                Est. {centre.years_operating} years
               </span>
-            ))}
-            {centre.levels.map((l) => (
-              <span key={l.id} className="text-xs bg-cream text-sage rounded-full px-2.5 py-0.5">
-                {l.label}
+            )}
+            {centre.class_size && (
+              <span className="text-xs bg-paper border border-linen text-sage rounded-full px-3 py-1 font-display font-medium">
+                Max {centre.class_size} per class
               </span>
-            ))}
+            )}
+            {minFee !== null && (
+              <span className="text-xs bg-mint text-fern border border-fern/15 rounded-full px-3 py-1 font-display font-semibold">
+                From S${minFee}
+              </span>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Desktop: 2-col layout | Mobile: single col */}
+      {/* ── Desktop: 2-col layout | Mobile: single col ── */}
       <div className="lg:grid lg:grid-cols-[1fr_380px] lg:max-w-5xl lg:mx-auto lg:items-start">
-
         {/* Left col — content sections */}
         <div className="lg:border-r lg:border-linen">
-          {/* About */}
-          {(centre.description || centre.teaching_style) && (
-            <Section title="About">
-              {centre.description && (
-                <p className="text-sm text-sage leading-relaxed">{centre.description}</p>
-              )}
-              {centre.teaching_style && (
-                <div className="mt-4 bg-mint/50 border border-fern/10 rounded-xl p-4">
-                  <p className="text-xs font-display font-semibold text-fern mb-1.5">Teaching approach</p>
-                  <p className="text-sm text-sage leading-relaxed">{centre.teaching_style}</p>
-                </div>
-              )}
-            </Section>
-          )}
 
-          {/* Teacher */}
-          {(centre.teacher_bio || centre.teacher_qualifications) && (
-            <Section title="Teacher" alt>
-              {centre.teacher_bio && (
-                <p className="text-sm text-sage leading-relaxed">{centre.teacher_bio}</p>
-              )}
-              {centre.teacher_qualifications && (
-                <p className="text-xs text-sage/70 mt-3 italic">{centre.teacher_qualifications}</p>
-              )}
-              {centre.track_record && (
-                <div className="mt-4 bg-white border border-linen rounded-xl p-4">
-                  <p className="text-xs font-display font-semibold text-forest mb-1.5">Track record</p>
-                  <p className="text-sm text-sage leading-relaxed">{centre.track_record}</p>
-                </div>
-              )}
-            </Section>
-          )}
-
-          {/* Policies */}
-          {hasPolicies && (
-            <Section title="Policies" alt>
-              <div className="grid grid-cols-2 gap-2.5">
-                <PolicyCard title="Trial policy" body={`S$${centre.slots[0]?.trial_fee ?? '—'} for one trial class.`} />
-                <PolicyCard title="Replacement class" body={centre.replacement_class_policy} />
-                <PolicyCard title="Makeup class" body={centre.makeup_class_policy} />
-                <PolicyCard title="Commitment" body={centre.commitment_terms} />
-                <PolicyCard title="Notice period" body={centre.notice_period_terms} />
-                <PolicyCard title="Payment" body={centre.payment_terms} />
-                <PolicyCard title="Other" body={centre.other_policies} />
+          {/* Mobile only: Trial slots FIRST (most actionable) */}
+          <div className="lg:hidden">
+            <section className="px-6 py-6 border-b border-linen bg-white">
+              <div className="flex items-center justify-between mb-4">
+                <p className="text-xs font-display font-semibold text-sage uppercase tracking-widest">
+                  Available trial slots
+                </p>
+                <span className="text-xs text-fern font-display font-semibold">
+                  {centre.slots.length} slot{centre.slots.length === 1 ? '' : 's'}
+                </span>
               </div>
-            </Section>
+              <CentreSlots slots={centre.slots} />
+            </section>
+          </div>
+
+          {/* About */}
+          <section className="px-6 py-6 border-b border-linen bg-white">
+            <p className="text-xs font-display font-semibold text-sage uppercase tracking-widest mb-4">
+              About
+            </p>
+            {centre.description ? (
+              <ExpandableText text={centre.description} maxLength={200} />
+            ) : (
+              <p className="text-sm text-sage/60 italic">Centre description coming soon</p>
+            )}
+          </section>
+
+          {/* Teaching approach callout */}
+          {centre.teaching_style && (
+            <div className="px-6 py-4 border-b border-linen">
+              <div className="bg-mint border-l-4 border-fern rounded-r-xl px-5 py-4">
+                <p className="text-xs font-display font-semibold text-fern uppercase tracking-widest mb-1.5">
+                  Teaching Approach
+                </p>
+                <p className="text-sm text-sage leading-relaxed">{centre.teaching_style}</p>
+              </div>
+            </div>
           )}
+
+          {/* Teachers */}
+          <section className="px-6 py-6 border-b border-linen bg-paper">
+            <p className="text-xs font-display font-semibold text-sage uppercase tracking-widest mb-4">
+              Meet the Team
+            </p>
+            {centre.teachers.length > 0 ? (
+              <div className="space-y-4">
+                {centre.teachers.map((teacher) => (
+                  <div key={teacher.id} className="bg-white border border-linen rounded-xl p-4">
+                    <div className="flex items-start gap-3">
+                      <div className="w-10 h-10 bg-fern rounded-full flex items-center justify-center text-white font-display font-bold text-sm shrink-0">
+                        {teacher.name.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="font-display font-bold text-forest text-sm">
+                            {teacher.name}
+                          </p>
+                          {teacher.is_founder && (
+                            <span className="text-xs bg-amber/20 text-amber border border-amber/30 rounded-full px-2 py-0.5 font-display font-semibold">
+                              Founder
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-sage mt-0.5">
+                          {[
+                            teacher.role,
+                            teacher.years_experience && `${teacher.years_experience} years exp`,
+                          ].filter(Boolean).join(' · ')}
+                        </p>
+                        {teacher.qualifications && (
+                          <p className="text-xs text-sage/70 mt-2 italic">{teacher.qualifications}</p>
+                        )}
+                        {teacher.bio && (
+                          <div className="mt-2">
+                            <ExpandableText text={teacher.bio} maxLength={150} />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="bg-white border border-linen border-dashed rounded-xl p-6 text-center">
+                <p className="text-sm text-sage">Teacher profiles coming soon</p>
+              </div>
+            )}
+
+            {/* Track record */}
+            {centre.track_record && (
+              <div className="mt-4 bg-mint border-l-4 border-fern rounded-r-xl px-5 py-4">
+                <p className="text-xs font-display font-semibold text-fern uppercase tracking-widest mb-1.5">
+                  Results
+                </p>
+                <p className="text-sm text-sage leading-relaxed">{centre.track_record}</p>
+              </div>
+            )}
+          </section>
+
+          {/* Policies (accordion) */}
+          <section className="px-6 py-6 border-b border-linen bg-paper">
+            <p className="text-xs font-display font-semibold text-sage uppercase tracking-widest mb-4">
+              Policies
+            </p>
+            {hasPolicies ? (
+              <div className="bg-white border border-linen rounded-xl px-4">
+                {minFee !== null && (
+                  <PolicyAccordion title="Trial Policy" body={`S$${minFee} for one trial class.`} />
+                )}
+                <PolicyAccordion title="Replacement Class" body={centre.replacement_class_policy} />
+                <PolicyAccordion title="Makeup Class" body={centre.makeup_class_policy} />
+                <PolicyAccordion title="Commitment Terms" body={centre.commitment_terms} />
+                <PolicyAccordion title="Notice Period" body={centre.notice_period_terms} />
+                <PolicyAccordion title="Payment" body={centre.payment_terms} />
+                <PolicyAccordion title="Other Policies" body={centre.other_policies} />
+              </div>
+            ) : (
+              <div className="bg-white border border-linen border-dashed rounded-xl p-6 text-center">
+                <p className="text-sm text-sage">Policy details coming soon</p>
+              </div>
+            )}
+          </section>
 
           {/* Getting there */}
-          {hasPractical && (
-            <Section title="Getting there">
-              <dl>
-                <InfoRow label="Address" value={centre.address} />
-                <InfoRow label="MRT" value={centre.nearest_mrt} />
-                <InfoRow label="Parking" value={centre.parking_info} />
-              </dl>
-            </Section>
-          )}
+          <section className="px-6 py-6 border-b border-linen bg-white">
+            <p className="text-xs font-display font-semibold text-sage uppercase tracking-widest mb-4">
+              Getting there
+            </p>
+            {hasPractical ? (
+              <>
+                <dl>
+                  <InfoRow label="Address" value={centre.address} />
+                  <InfoRow label="MRT" value={centre.nearest_mrt} />
+                  <InfoRow label="Parking" value={centre.parking_info} />
+                </dl>
+                {/* Map placeholder — ready for Google Maps embed */}
+                <div className="mt-4 h-40 bg-paper rounded-xl border border-linen flex items-center justify-center">
+                  <p className="text-xs text-sage">Map coming soon</p>
+                </div>
+              </>
+            ) : (
+              <div className="bg-paper border border-linen border-dashed rounded-xl p-6 text-center">
+                <p className="text-sm text-sage">Address details coming soon</p>
+              </div>
+            )}
+          </section>
         </div>
 
-        {/* Right col — trial slots */}
-        <div>
-          {/* Mobile: inline section */}
-          <div className="lg:hidden">
-            <Section title="Available trial slots">
-              <CentreSlots slots={centre.slots} />
-            </Section>
-          </div>
-          {/* Desktop: sticky panel */}
-          <div className="hidden lg:block sticky top-16 px-6 py-6 border-b border-linen">
-            <p className="text-xs font-display font-semibold text-sage uppercase tracking-widest mb-4">
-              Available trial slots
+        {/* Right col — trial slots (desktop only, sticky) */}
+        <div className="hidden lg:block sticky top-16 px-6 py-6 border-b border-linen">
+          <div className="flex items-center justify-between mb-4">
+            <p className="text-xs font-display font-semibold text-sage uppercase tracking-widest">
+              Available Trials
             </p>
-            <CentreSlots slots={centre.slots} />
+            <span className="text-xs text-fern font-display font-semibold">
+              {centre.slots.length} slot{centre.slots.length === 1 ? '' : 's'}
+            </span>
           </div>
+          <CentreSlots slots={centre.slots} />
         </div>
       </div>
 
-      {/* Bottom padding */}
-      <div className="h-8 bg-white" />
+      {/* Bottom padding for sticky CTA */}
+      <div className="h-24 bg-white" />
     </div>
   )
 }

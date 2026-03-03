@@ -29,3 +29,12 @@ body {
   background: #FDFCF9;
   color: #1e3d2f;
 }
+
+/* ── Accordion (details/summary) ─────────────────────────────── */
+details > summary {
+  cursor: pointer;
+  list-style: none;
+}
+details > summary::-webkit-details-marker {
+  display: none;
+}

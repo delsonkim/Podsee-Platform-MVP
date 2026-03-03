@@ -80,7 +80,9 @@ export default function BookingForm({
           <p className="font-display font-semibold text-forest text-sm truncate">
             {userProfile.name}
           </p>
-          <p className="text-xs text-sage truncate">{userProfile.email}</p>
+          <p className="text-xs text-sage truncate">
+            {userProfile.email} · <span className="text-sage/60">Signed in via Google</span>
+          </p>
         </div>
       </div>
 
@@ -125,15 +127,7 @@ export default function BookingForm({
           placeholder="+65 9123 4567"
           className={inputClass}
         />
-      </Field>
-
-      <Field label="How did you hear about Podsee?">
-        <select name="referral_source" className={inputClass}>
-          <option value="">Select an option</option>
-          {REFERRAL_OPTIONS.map((o) => (
-            <option key={o} value={o}>{o}</option>
-          ))}
-        </select>
+        <p className="text-xs text-sage/60 mt-1">We&apos;ll only contact you about this booking</p>
       </Field>
 
       {error && (
@@ -145,7 +139,7 @@ export default function BookingForm({
       <button
         type="submit"
         disabled={isPending}
-        className="w-full bg-fern text-white text-sm font-display font-bold py-3.5 rounded-xl hover:bg-forest transition-colors disabled:opacity-60 shadow-lg shadow-fern/20"
+        className="w-full bg-fern text-white text-sm font-display font-bold py-4 rounded-xl hover:bg-forest transition-colors disabled:opacity-60 shadow-lg shadow-fern/20"
       >
         {isPending ? 'Submitting…' : `Confirm booking · S$${slot.trial_fee}`}
       </button>
@@ -154,6 +148,19 @@ export default function BookingForm({
         By booking, you agree that Podsee will share your details with the centre to arrange your
         trial class.
       </p>
+
+      {/* Referral source — optional, secondary */}
+      <div className="pt-3 border-t border-linen">
+        <label className="block text-xs font-display text-sage mb-1.5">
+          How did you hear about Podsee? <span className="text-sage/50">(optional)</span>
+        </label>
+        <select name="referral_source" className={inputClass}>
+          <option value="">Select an option</option>
+          {REFERRAL_OPTIONS.map((o) => (
+            <option key={o} value={o}>{o}</option>
+          ))}
+        </select>
+      </div>
     </form>
   )
 }

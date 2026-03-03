@@ -13,12 +13,6 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
             Podsee
           </Link>
           <div className="flex items-center gap-4">
-            <Link
-              href="/centres"
-              className="text-sm text-sage hover:text-forest transition-colors font-medium"
-            >
-              Browse centres
-            </Link>
             <UserMenu />
           </div>
         </div>

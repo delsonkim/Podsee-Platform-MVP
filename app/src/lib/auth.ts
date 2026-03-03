@@ -3,12 +3,13 @@ import { createClient } from '@/lib/supabase/client'
 /**
  * Redirect to Google OAuth. After login, the user lands on the `returnTo` path.
  */
-export function signInWithGoogle(returnTo: string) {
+export function signInWithGoogle(returnTo: string, opts?: { loginHint?: string }) {
   const supabase = createClient()
   supabase.auth.signInWithOAuth({
     provider: 'google',
     options: {
       redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(returnTo)}`,
+      queryParams: opts?.loginHint ? { login_hint: opts.loginHint } : undefined,
     },
   })
 }

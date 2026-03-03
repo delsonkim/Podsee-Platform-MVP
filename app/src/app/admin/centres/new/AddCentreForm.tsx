@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useRef, useState, useTransition } from 'react'
 import { createCentre, type TeacherInput, type TrialSlotInput } from './actions'
+import { uploadCentreImage } from './image-actions'
 import SlotUploader, { type ParsedSlot } from './SlotUploader'
 
 interface Subject {
@@ -55,8 +56,14 @@ export default function AddCentreForm({
   const [isPending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
 
+  // Hero image
+  const [heroImageUrl, setHeroImageUrl] = useState<string | null>(null)
+  const [imageUploading, setImageUploading] = useState(false)
+  const imageInputRef = useRef<HTMLInputElement>(null)
+
   // Step 1: Basic Info
   const [name, setName] = useState('')
+  const [contactEmail, setContactEmail] = useState('')
   const [address, setAddress] = useState('')
   const [area, setArea] = useState('')
   const [nearestMrt, setNearestMrt] = useState('')
@@ -114,10 +121,23 @@ export default function AddCentreForm({
     setImportedSlots(slots)
   }
 
+  async function handleImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setImageUploading(true)
+    setError(null)
+    const fd = new FormData()
+    fd.append('file', file)
+    const result = await uploadCentreImage(fd)
+    setImageUploading(false)
+    if ('url' in result) setHeroImageUrl(result.url)
+    else setError(result.error)
+  }
+
   // ── Validation ────────────────────────────────────────────
 
   function canProceed(): boolean {
-    if (step === 0) return name.trim().length > 0
+    if (step === 0) return name.trim().length > 0 && contactEmail.trim().length > 0
     if (step === 1) return specialisation.trim().length > 0
     if (step === 2) return teachers.some((t) => t.name.trim().length > 0)
     return true
@@ -148,6 +168,7 @@ export default function AddCentreForm({
     startTransition(async () => {
       const result = await createCentre({
         name: name.trim(),
+        contact_email: contactEmail.trim().toLowerCase(),
         address: address.trim(),
         area: area.trim(),
         nearest_mrt: nearestMrt.trim(),
@@ -164,6 +185,7 @@ export default function AddCentreForm({
         notice_period_terms: noticePeriod.trim(),
         payment_terms: paymentTerms.trim(),
         other_policies: otherPolicies.trim(),
+        hero_image_url: heroImageUrl,
         trial_slots: trialSlots,
       })
       if (result?.error) {
@@ -232,6 +254,66 @@ export default function AddCentreForm({
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="e.g. MathPro Academy"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400"
+                />
+              </div>
+              {/* Hero image upload */}
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Centre Photo <span className="text-gray-400 font-normal">(optional)</span>
+                </label>
+                <p className="text-xs text-gray-400 mb-2">
+                  Landscape photo (16:9). Max 10MB. Shows as the hero image on the centre page.
+                </p>
+                {heroImageUrl ? (
+                  <div className="relative rounded-lg overflow-hidden border border-gray-200">
+                    <img
+                      src={heroImageUrl}
+                      alt="Centre hero"
+                      className="w-full h-40 object-cover"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setHeroImageUrl(null)
+                        if (imageInputRef.current) imageInputRef.current.value = ''
+                      }}
+                      className="absolute top-2 right-2 bg-white/90 backdrop-blur text-gray-600 hover:text-red-600 rounded-full w-7 h-7 flex items-center justify-center text-sm shadow-sm"
+                    >
+                      &times;
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => imageInputRef.current?.click()}
+                    disabled={imageUploading}
+                    className="w-full border-2 border-dashed border-gray-200 rounded-lg py-8 text-sm text-gray-500 hover:text-gray-700 hover:border-gray-300 transition-colors disabled:opacity-50"
+                  >
+                    {imageUploading ? 'Uploading...' : 'Click to upload a photo'}
+                  </button>
+                )}
+                <input
+                  ref={imageInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageSelect}
+                  className="hidden"
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Centre Owner Email <span className="text-red-500">*</span>
+                </label>
+                <p className="text-xs text-gray-400 mb-1">
+                  The centre owner will receive an invite to sign in with this Google email and access their dashboard.
+                </p>
+                <input
+                  type="email"
+                  value={contactEmail}
+                  onChange={(e) => setContactEmail(e.target.value)}
+                  placeholder="e.g. owner@mathproacademy.com"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400"
                 />
               </div>

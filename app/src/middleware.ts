@@ -25,10 +25,23 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  // Refresh the session — this is the only reason we have middleware.
-  // No route protection: everything is public. Only booking requires auth
-  // and that check happens in the booking page itself.
-  await supabase.auth.getUser()
+  const path = request.nextUrl.pathname
+
+  // Only call getUser() (network round-trip) for protected routes
+  if (path.startsWith('/centre-dashboard')) {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      return NextResponse.redirect(new URL('/centre-login', request.url))
+    }
+  } else if (path.startsWith('/admin')) {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      return NextResponse.redirect(new URL('/admin-login', request.url))
+    }
+  } else {
+    // Public routes: refresh session cookie locally (no network call)
+    await supabase.auth.getSession()
+  }
 
   return supabaseResponse
 }

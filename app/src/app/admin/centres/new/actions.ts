@@ -3,6 +3,9 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
+import { sendCentreInvite } from '@/lib/email'
+import { parseScheduleWithAI } from '@/lib/ai-parser'
+import type { AIParseResult } from '@/types/ai-parser'
 
 function slugify(text: string): string {
   return text
@@ -40,6 +43,7 @@ export interface TrialSlotInput {
 export async function createCentre(formPayload: {
   // Step 1: Basic Info
   name: string
+  contact_email: string
   address: string
   area: string
   nearest_mrt: string
@@ -62,6 +66,9 @@ export async function createCentre(formPayload: {
   notice_period_terms: string
   payment_terms: string
   other_policies: string
+
+  // Hero image (optional)
+  hero_image_url: string | null
 
   // Step 5: Trial Slots (required)
   trial_slots: TrialSlotInput[]
@@ -99,6 +106,7 @@ export async function createCentre(formPayload: {
     .insert({
       name: formPayload.name,
       slug,
+      contact_email: formPayload.contact_email || null,
       address: formPayload.address || null,
       area: formPayload.area || null,
       nearest_mrt: formPayload.nearest_mrt || null,
@@ -113,6 +121,7 @@ export async function createCentre(formPayload: {
       notice_period_terms: formPayload.notice_period_terms || null,
       payment_terms: formPayload.payment_terms || null,
       other_policies: formPayload.other_policies || null,
+      hero_image_url: formPayload.hero_image_url,
       is_active: true,
       is_paused: false,
     })
@@ -124,6 +133,22 @@ export async function createCentre(formPayload: {
   }
 
   const centreId = centre.id
+
+  // 3b. Auto-provision centre user + send invite email
+  if (formPayload.contact_email) {
+    await supabase.from('centre_users').insert({
+      auth_user_id: null,
+      centre_id: centreId,
+      role: 'owner',
+      email: formPayload.contact_email,
+    })
+
+    // Fire-and-forget — don't block centre creation
+    sendCentreInvite({
+      email: formPayload.contact_email,
+      centreName: formPayload.name,
+    }).catch(() => {})
+  }
 
   // 4. Insert teachers
   for (const teacher of formPayload.teachers) {
@@ -230,4 +255,54 @@ export async function createCentre(formPayload: {
 
   revalidatePath('/admin/centres')
   redirect('/admin/centres')
+}
+
+export async function parseSchedule(rawText: string): Promise<AIParseResult> {
+  const supabase = createAdminClient()
+
+  const [{ data: subjects }, { data: levels }] = await Promise.all([
+    supabase.from('subjects').select('id, name'),
+    supabase.from('levels').select('id, code, label'),
+  ])
+
+  return parseScheduleWithAI(rawText, subjects ?? [], levels ?? [])
+}
+
+export async function createCustomSubject(
+  name: string
+): Promise<{ id: string; name: string } | { error: string }> {
+  const supabase = createAdminClient()
+  const trimmed = name.trim()
+
+  if (!trimmed) return { error: 'Subject name is required.' }
+
+  // Check if subject already exists (case-insensitive)
+  const { data: existing } = await supabase
+    .from('subjects')
+    .select('id, name')
+    .ilike('name', trimmed)
+    .maybeSingle()
+
+  if (existing) return { id: existing.id, name: existing.name }
+
+  // Get max sort_order for placement at end
+  const { data: maxSort } = await supabase
+    .from('subjects')
+    .select('sort_order')
+    .order('sort_order', { ascending: false })
+    .limit(1)
+    .single()
+
+  const { data, error } = await supabase
+    .from('subjects')
+    .insert({
+      name: trimmed,
+      is_custom: true,
+      sort_order: (maxSort?.sort_order ?? 999) + 1,
+    })
+    .select('id, name')
+    .single()
+
+  if (error) return { error: error.message }
+  return data
 }

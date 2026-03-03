@@ -1,6 +1,10 @@
+import { requireAdminUser } from '@/lib/admin-auth'
 import AdminNav from './AdminNav'
+import SignOutButton from './SignOutButton'
 
-export default function AdminLayout({ children }: { children: React.ReactNode }) {
+export default async function AdminLayout({ children }: { children: React.ReactNode }) {
+  const { user } = await requireAdminUser()
+
   return (
     <div className="flex min-h-screen">
       {/* Sidebar */}
@@ -9,6 +13,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <span className="text-white font-semibold text-sm tracking-wide">Podsee Admin</span>
         </div>
         <AdminNav />
+        <div className="mt-auto p-4 border-t border-white/10 space-y-1">
+          <p className="text-gray-400 text-xs truncate">{user.email}</p>
+          <SignOutButton />
+        </div>
       </aside>
 
       {/* Main */}

@@ -190,3 +190,72 @@ export async function sendBookingConfirmation(data: BookingEmailData) {
     console.error('[email] Failed to send booking confirmation:', error)
   }
 }
+
+export async function sendCentreInvite({
+  email,
+  centreName,
+}: {
+  email: string
+  centreName: string
+}) {
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://podsee.sg'
+
+  const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+</head>
+<body style="margin:0;padding:0;background:#faf8f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+  <div style="max-width:520px;margin:0 auto;padding:32px 20px;">
+
+    <div style="text-align:center;margin-bottom:32px;">
+      <span style="font-size:18px;font-weight:700;color:#2d4a3e;letter-spacing:-0.3px;">Podsee</span>
+    </div>
+
+    <div style="background:#ffffff;border:1px solid #e8e2d9;border-radius:16px;overflow:hidden;">
+      <div style="background:#2d4a3e;padding:24px 24px 20px;text-align:center;">
+        <h1 style="color:#ffffff;font-size:20px;font-weight:700;margin:0 0 4px;">Welcome to Podsee!</h1>
+        <p style="color:rgba(255,255,255,0.8);font-size:13px;margin:0;">Your centre dashboard is ready.</p>
+      </div>
+
+      <div style="padding:24px;">
+        <p style="font-size:14px;color:#2d4a3e;line-height:1.6;margin:0 0 16px;">
+          <strong>${centreName}</strong> has been added to the Podsee platform. You can now access your centre dashboard to view trial bookings, track leads, and monitor slot capacity.
+        </p>
+        <p style="font-size:14px;color:#2d4a3e;line-height:1.6;margin:0 0 24px;">
+          Sign in with your Google account (<strong>${email}</strong>) to get started:
+        </p>
+        <div style="text-align:center;">
+          <a href="${siteUrl}/centre-dashboard" style="display:inline-block;background:#4a7556;color:#ffffff;font-size:14px;font-weight:600;text-decoration:none;padding:12px 32px;border-radius:10px;">
+            Sign in to your Dashboard
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <div style="text-align:center;padding:24px 0;font-size:11px;color:#8a8477;">
+      <p style="margin:0;">&copy; 2026 Podsee. Singapore.</p>
+    </div>
+  </div>
+</body>
+</html>
+  `.trim()
+
+  if (!resend) {
+    console.warn('[email] RESEND_API_KEY not set — skipping centre invite email')
+    return
+  }
+
+  const { error } = await resend.emails.send({
+    from: FROM_EMAIL,
+    to: email,
+    subject: `${centreName} — Your Podsee centre dashboard is ready`,
+    html,
+  })
+
+  if (error) {
+    console.error('[email] Failed to send centre invite:', error)
+  }
+}

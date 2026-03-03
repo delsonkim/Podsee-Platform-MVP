@@ -79,7 +79,7 @@ export default function CentreFilters({
       {hasFilters && (
         <button
           onClick={() => router.push(pathname)}
-          className="text-xs text-sage hover:text-forest underline underline-offset-2"
+          className="text-xs font-display font-medium text-sage bg-cream border border-linen rounded-full px-3 py-1.5 hover:bg-paper hover:text-forest transition-colors"
         >
           Clear filters
         </button>

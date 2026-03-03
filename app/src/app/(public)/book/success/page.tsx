@@ -51,12 +51,20 @@ export default async function BookingSuccessPage({
         </ol>
       </div>
 
-      <Link
-        href="/centres"
-        className="inline-flex items-center text-sm text-sage border border-linen rounded-xl px-5 py-2.5 hover:bg-paper transition-colors font-display font-medium"
-      >
-        Browse more centres
-      </Link>
+      <div className="flex flex-col sm:flex-row gap-3 justify-center">
+        <Link
+          href="/my-bookings"
+          className="inline-flex items-center justify-center text-sm text-white bg-fern font-display font-bold rounded-xl px-6 py-3 hover:bg-forest transition-colors shadow-lg shadow-fern/20"
+        >
+          View my bookings
+        </Link>
+        <Link
+          href="/centres"
+          className="inline-flex items-center justify-center text-sm text-sage border border-linen rounded-xl px-6 py-3 hover:bg-paper transition-colors font-display font-medium"
+        >
+          Browse more centres
+        </Link>
+      </div>
     </div>
   )
 }

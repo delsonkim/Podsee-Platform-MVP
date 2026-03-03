@@ -6,12 +6,29 @@ import type { SlotDetail } from '@/lib/public-data'
 import { createClient } from '@/lib/supabase/client'
 import { signInWithGoogle } from '@/lib/auth'
 
+/* ── Date / time helpers ── */
+
 function formatDate(d: string) {
-  return new Date(d).toLocaleDateString('en-SG', {
+  return new Date(d + 'T00:00:00').toLocaleDateString('en-SG', {
     weekday: 'long',
     day: 'numeric',
     month: 'short',
   })
+}
+
+function relativeLabel(d: string): string | null {
+  const [y, m, day] = d.split('-').map(Number)
+  const slotDate = new Date(y, m - 1, day)
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const diff = Math.round((slotDate.getTime() - today.getTime()) / 86400000)
+
+  if (diff === 0) return 'Today'
+  if (diff === 1) return 'Tomorrow'
+  if (diff > 1 && diff <= 6) {
+    return `This ${slotDate.toLocaleDateString('en-SG', { weekday: 'long' })}`
+  }
+  return null
 }
 
 function formatTime(t: string) {
@@ -27,8 +44,8 @@ function duration(start: string, end: string) {
   const [eh, em] = end.split(':').map(Number)
   const mins = eh * 60 + em - (sh * 60 + sm)
   const h = Math.floor(mins / 60)
-  const m = mins % 60
-  return m > 0 ? `${h}h ${m}min` : `${h}h`
+  const mn = mins % 60
+  return mn > 0 ? `${h}h ${mn}min` : `${h}h`
 }
 
 export default function CentreSlots({ slots }: { slots: SlotDetail[] }) {
@@ -36,6 +53,9 @@ export default function CentreSlots({ slots }: { slots: SlotDetail[] }) {
   const [selected, setSelected] = useState<string | null>(null)
   const [isLoggedIn, setIsLoggedIn] = useState(false)
   const [checking, setChecking] = useState(false)
+
+  const minFee =
+    slots.length > 0 ? Math.min(...slots.map((s) => Number(s.trial_fee))) : null
 
   useEffect(() => {
     const supabase = createClient()
@@ -48,14 +68,12 @@ export default function CentreSlots({ slots }: { slots: SlotDetail[] }) {
     if (!selected) return
     setChecking(true)
 
-    // Double-check auth state before navigating
     const supabase = createClient()
     const { data } = await supabase.auth.getUser()
 
     if (data.user) {
       router.push(`/book/${selected}`)
     } else {
-      // Not logged in — redirect to Google OAuth, come back to booking page
       signInWithGoogle(`/book/${selected}`)
     }
   }
@@ -73,127 +91,157 @@ export default function CentreSlots({ slots }: { slots: SlotDetail[] }) {
         <p className="text-sm text-sage">No trial slots available right now. Check back soon.</p>
       ) : (
         <div className="space-y-6">
-          {sortedDates.map((date) => (
-            <div key={date}>
-              <p className="text-xs font-display font-semibold text-sage uppercase tracking-widest mb-3">
-                {formatDate(date)}
-              </p>
-              <div className="space-y-2">
-                {slotsByDate[date].map((slot) => {
-                  const filled = slot.max_students - slot.spots_remaining
-                  const pct = Math.round((filled / slot.max_students) * 100)
-                  const isFull = slot.spots_remaining === 0
-                  const isLow = !isFull && pct >= 75
-                  const isSelected = selected === slot.id
+          {sortedDates.map((date) => {
+            const rel = relativeLabel(date)
+            return (
+              <div key={date}>
+                {/* Date header with relative label */}
+                <div className="mb-3">
+                  {rel && (
+                    <p className="font-display font-bold text-forest text-sm">{rel}</p>
+                  )}
+                  <p className={`text-xs font-display font-semibold text-sage uppercase tracking-widest ${rel ? 'mt-0.5' : ''}`}>
+                    {formatDate(date)}
+                  </p>
+                </div>
 
-                  return (
-                    <button
-                      key={slot.id}
-                      disabled={isFull}
-                      onClick={() => setSelected(isSelected ? null : slot.id)}
-                      className={`w-full p-4 rounded-xl border-[1.5px] text-left transition-all ${
-                        isFull
-                          ? 'opacity-50 cursor-not-allowed bg-paper border-linen'
-                          : isSelected
-                          ? 'border-fern bg-mint'
-                          : 'border-linen bg-white hover:border-fern/50'
-                      }`}
-                    >
-                      {/* Top row */}
-                      <div className="flex items-start justify-between gap-3 mb-3">
-                        <div>
-                          <p className="font-display font-semibold text-forest text-sm">
-                            {formatTime(slot.start_time)} – {formatTime(slot.end_time)}
-                          </p>
-                          <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                            <span className="text-xs bg-mint text-fern border border-fern/15 rounded-full px-2.5 py-0.5 font-medium">
-                              {slot.subject.name}
-                            </span>
-                            <span className="text-xs bg-cream text-sage rounded-full px-2.5 py-0.5">
-                              {slot.level.label}
-                            </span>
-                            <span className="text-xs text-sage">
-                              {duration(slot.start_time, slot.end_time)}
-                            </span>
+                <div className="space-y-2">
+                  {slotsByDate[date].map((slot) => {
+                    const filled = slot.max_students - slot.spots_remaining
+                    const pct = Math.round((filled / slot.max_students) * 100)
+                    const isFull = slot.spots_remaining === 0
+                    const isLow = !isFull && slot.spots_remaining <= 2
+                    const isSelected = selected === slot.id
+
+                    return (
+                      <button
+                        key={slot.id}
+                        disabled={isFull}
+                        onClick={() => setSelected(isSelected ? null : slot.id)}
+                        className={`relative w-full p-4 rounded-xl border-[1.5px] text-left transition-all ${
+                          isFull
+                            ? 'opacity-50 cursor-not-allowed bg-paper border-linen'
+                            : isSelected
+                            ? 'border-fern bg-mint'
+                            : 'border-linen bg-white hover:border-fern/50'
+                        }`}
+                      >
+                        {/* Selected checkmark */}
+                        {isSelected && (
+                          <div className="absolute top-3 right-3 w-5 h-5 bg-fern rounded-full flex items-center justify-center">
+                            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                              <path d="M2.5 6l2.5 2.5 4.5-5" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
                           </div>
-                        </div>
-                        <div className="flex flex-col items-end gap-1.5 shrink-0">
-                          <span
-                            className={`text-xs font-display font-bold px-2.5 py-1 rounded-full ${
-                              isFull
-                                ? 'bg-red-500 text-white'
-                                : isLow
-                                ? 'bg-amber text-white'
-                                : 'bg-fern text-white'
-                            }`}
-                          >
-                            {isFull
-                              ? 'Full'
-                              : `${slot.spots_remaining} spot${slot.spots_remaining === 1 ? '' : 's'} left`}
-                          </span>
-                          <span className="font-display font-bold text-forest text-sm">
+                        )}
+
+                        {/* Top row: time + price */}
+                        <div className="flex items-start justify-between gap-3 mb-2">
+                          <div>
+                            <p className="font-display font-bold text-forest text-sm">
+                              {formatTime(slot.start_time)} – {formatTime(slot.end_time)}
+                            </p>
+                            <p className="text-xs text-sage mt-1">
+                              {slot.subject.name} · {slot.level.label} · {duration(slot.start_time, slot.end_time)}
+                            </p>
+                          </div>
+                          <span className="font-display font-bold text-forest text-base shrink-0">
                             S${slot.trial_fee}
                           </span>
                         </div>
-                      </div>
 
-                      {/* Capacity bar */}
-                      <div className="h-[5px] bg-linen rounded-full overflow-hidden mb-1.5">
-                        <div
-                          className={`h-full rounded-full transition-all ${
-                            isFull ? 'bg-red-500' : isLow ? 'bg-amber' : 'bg-fern'
-                          }`}
-                          style={{ width: `${pct}%` }}
-                        />
-                      </div>
-                      <p className="text-xs text-sage">
-                        {filled} / {slot.max_students} enrolled
-                      </p>
+                        {/* Urgency badge */}
+                        {isFull ? (
+                          <span className="inline-block text-xs font-display font-bold bg-red-100 text-red-600 px-2.5 py-1 rounded-full mb-2">
+                            Full
+                          </span>
+                        ) : isLow ? (
+                          <span className="inline-block text-xs font-display font-bold bg-red-50 text-red-600 px-2.5 py-1 rounded-full mb-2 animate-pulse">
+                            Only {slot.spots_remaining} spot{slot.spots_remaining === 1 ? '' : 's'} left!
+                          </span>
+                        ) : (
+                          <span className="inline-block text-xs font-display font-semibold text-fern mb-2">
+                            {slot.spots_remaining} spot{slot.spots_remaining === 1 ? '' : 's'} left
+                          </span>
+                        )}
 
-                      {slot.notes && (
-                        <p className="text-xs text-sage italic mt-1.5 border-t border-linen/60 pt-1.5">
-                          {slot.notes}
-                        </p>
-                      )}
-                    </button>
-                  )
-                })}
+                        {/* Thin capacity bar */}
+                        <div className="h-[3px] bg-linen rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all ${
+                              isFull ? 'bg-red-400' : isLow ? 'bg-amber' : 'bg-fern'
+                            }`}
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+
+                        {/* Notes */}
+                        {slot.notes && (
+                          <p className="text-xs text-sage italic mt-2 border-t border-linen/60 pt-2">
+                            {slot.notes}
+                          </p>
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
 
-      {/* Sticky CTA */}
+      {/* ── Sticky bottom CTA ── */}
+      {/* Mobile: always visible | Desktop: only when slot selected */}
       <div
-        className={`fixed bottom-0 left-0 right-0 bg-white border-t-2 border-linen px-6 py-4 transition-transform duration-300 z-20 ${
-          selected ? 'translate-y-0' : 'translate-y-full'
+        className={`fixed bottom-0 left-0 right-0 bg-white border-t-2 border-linen px-6 py-4 transition-transform duration-300 z-20 translate-y-0 ${
+          !selected ? 'lg:translate-y-full' : ''
         }`}
       >
         <div className="max-w-5xl mx-auto flex items-center justify-between gap-4">
-          <div>
-            <p className="text-xs text-sage">Selected slot</p>
-            {selectedSlot && (
-              <p className="font-display font-bold text-forest text-sm leading-tight mt-0.5">
-                {selectedSlot.subject.name} · {selectedSlot.level.label}
-                <span className="text-sage font-normal">
-                  {' '}· {formatTime(selectedSlot.start_time)} – {formatTime(selectedSlot.end_time)}
-                </span>
-              </p>
-            )}
-          </div>
-          <button
-            onClick={handleBookClick}
-            disabled={checking}
-            className="bg-fern text-white font-display font-bold text-sm px-6 py-3 rounded-xl hover:bg-forest transition-colors whitespace-nowrap shadow-lg shadow-fern/25 disabled:opacity-60"
-          >
-            {checking ? 'Loading…' : `Book Trial · S$${selectedSlot?.trial_fee}`}
-          </button>
+          {selectedSlot ? (
+            /* Slot selected state */
+            <>
+              <div className="min-w-0">
+                <p className="text-xs text-sage">Selected slot</p>
+                <p className="font-display font-bold text-forest text-sm leading-tight mt-0.5 truncate">
+                  {selectedSlot.subject.name} · {selectedSlot.level.label}
+                  <span className="text-sage font-normal">
+                    {' '}· {formatDate(selectedSlot.date)}, {formatTime(selectedSlot.start_time)}
+                  </span>
+                </p>
+              </div>
+              <button
+                onClick={handleBookClick}
+                disabled={checking}
+                className="bg-fern text-white font-display font-bold text-sm px-6 py-3.5 rounded-xl hover:bg-forest transition-colors whitespace-nowrap shadow-xl shadow-fern/20 disabled:opacity-60 shrink-0"
+              >
+                {checking ? 'Loading…' : `Book Trial · S$${selectedSlot.trial_fee}`}
+              </button>
+            </>
+          ) : (
+            /* Default state (mobile only — hidden on desktop via lg:translate-y-full) */
+            <>
+              <div>
+                {minFee !== null && (
+                  <p className="font-display font-bold text-forest text-sm">
+                    From S${minFee} <span className="font-normal text-sage text-xs">/ trial</span>
+                  </p>
+                )}
+                <p className="text-xs text-sage mt-0.5">
+                  {slots.length} slot{slots.length === 1 ? '' : 's'} available
+                </p>
+              </div>
+              <span className="text-sm font-display font-semibold text-sage bg-paper border border-linen px-6 py-3.5 rounded-xl shrink-0">
+                Select a slot above
+              </span>
+            </>
+          )}
         </div>
       </div>
 
-      {/* Spacer so page content isn't hidden behind sticky CTA */}
-      {selected && <div className="h-20" />}
+      {/* Spacer for sticky CTA */}
+      <div className="h-20" />
     </>
   )
 }

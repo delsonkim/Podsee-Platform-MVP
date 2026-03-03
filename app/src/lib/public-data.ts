@@ -9,6 +9,7 @@ export type CentreSummary = Centre & {
   subjects: Subject[]
   levels: Level[]
   min_fee: number
+  slot_count: number
 }
 
 export type SlotDetail = TrialSlot & {
@@ -17,25 +18,40 @@ export type SlotDetail = TrialSlot & {
   centre: Centre
 }
 
+export type Teacher = {
+  id: string
+  name: string
+  role: string | null
+  is_founder: boolean
+  qualifications: string | null
+  bio: string | null
+  years_experience: number | null
+  sort_order: number
+}
+
 export type CentreDetail = Centre & {
   subjects: Subject[]
   levels: Level[]
   slots: SlotDetail[]
+  teachers: Teacher[]
 }
 
 export async function getCentres(): Promise<CentreSummary[]> {
   try {
     const supabase = createAdminClient()
+    const today = new Date().toISOString().slice(0, 10)
     const { data, error } = await supabase
       .from('centres')
       .select(`
         *,
         centre_subjects(subjects(*)),
         centre_levels(levels(*)),
-        trial_slots(trial_fee)
+        trial_slots!left(trial_fee)
       `)
       .eq('is_active', true)
       .eq('is_paused', false)
+      .gte('trial_slots.date', today)
+      .gt('trial_slots.spots_remaining', 0)
       .order('name')
 
     if (error || !data) return []
@@ -48,6 +64,7 @@ export async function getCentres(): Promise<CentreSummary[]> {
         (c.trial_slots as any[]).length > 0
           ? Math.min(...(c.trial_slots as any[]).map((s: any) => Number(s.trial_fee)))
           : 0,
+      slot_count: (c.trial_slots as any[]).length,
     }))
   } catch {
     return []
@@ -65,10 +82,13 @@ export async function getCentreBySlug(slug: string): Promise<CentreDetail | null
         *,
         centre_subjects(subjects(*)),
         centre_levels(levels(*)),
-        trial_slots(*, subjects(*), levels(*))
+        trial_slots!left(*, subjects(*), levels(*)),
+        teachers(*)
       `)
       .eq('slug', slug)
       .eq('is_active', true)
+      .gte('trial_slots.date', today)
+      .gt('trial_slots.spots_remaining', 0)
       .single()
 
     if (error || !data) return null
@@ -85,7 +105,6 @@ export async function getCentreBySlug(slug: string): Promise<CentreDetail | null
       .filter(Boolean)
 
     const slots: SlotDetail[] = (d.trial_slots as any[])
-      .filter((s: any) => s.date >= today && s.spots_remaining > 0)
       .sort(
         (a: any, b: any) =>
           a.date.localeCompare(b.date) || a.start_time.localeCompare(b.start_time)
@@ -98,7 +117,10 @@ export async function getCentreBySlug(slug: string): Promise<CentreDetail | null
         centre,
       }))
 
-    return { ...centre, subjects, levels, slots }
+    const teachers: Teacher[] = ((d.teachers as any[]) ?? [])
+      .sort((a: any, b: any) => (a.sort_order ?? 99) - (b.sort_order ?? 99))
+
+    return { ...centre, subjects, levels, slots, teachers }
   } catch {
     return null
   }
