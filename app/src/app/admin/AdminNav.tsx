@@ -13,6 +13,7 @@ const links = [
   { href: '/admin/rewards', label: 'Rewards' },
   { href: '/admin/centre-users', label: 'Centre Users' },
   { href: '/admin/admin-users', label: 'Admin Users' },
+  { href: '/admin/links', label: 'Links' },
 ]
 
 export default function AdminNav() {
