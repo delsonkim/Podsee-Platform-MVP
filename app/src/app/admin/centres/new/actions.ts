@@ -11,12 +11,6 @@ function slugify(text: string): string {
     .replace(/^-|-$/g, '')
 }
 
-export interface ProgrammeInput {
-  subject_id: string
-  display_name: string
-  level_ids: string[]
-}
-
 export interface TeacherInput {
   name: string
   role: string
@@ -40,6 +34,7 @@ export interface TrialSlotInput {
   trial_fee: number
   max_students: number
   notes: string
+  raw_subject_text: string
 }
 
 export async function createCentre(formPayload: {
@@ -50,21 +45,17 @@ export async function createCentre(formPayload: {
   nearest_mrt: string
   years_operating: number | null
 
-  // Step 2: Centre Type & Programmes
-  centre_type: 'academic' | 'enrichment' | 'both'
-  programmes: ProgrammeInput[]
-
-  // Step 3: About & Teaching (structured questions)
+  // Step 2: About & Teaching
   specialisation: string
   student_types: string[]
   teaching_approach: string
   results: string
   class_size: number | null
 
-  // Step 4: Team
+  // Step 3: Team
   teachers: TeacherInput[]
 
-  // Step 5: Policies
+  // Step 4: Policies
   replacement_class_policy: string
   makeup_class_policy: string
   commitment_terms: string
@@ -72,7 +63,7 @@ export async function createCentre(formPayload: {
   payment_terms: string
   other_policies: string
 
-  // Step 6: Trial Slots
+  // Step 5: Trial Slots (required)
   trial_slots: TrialSlotInput[]
 }) {
   const supabase = createAdminClient()
@@ -134,49 +125,11 @@ export async function createCentre(formPayload: {
 
   const centreId = centre.id
 
-  // 4. Insert centre_subjects (unique subjects from programmes)
-  const uniqueSubjects = new Map<string, string>()
-  for (const p of formPayload.programmes) {
-    uniqueSubjects.set(p.subject_id, p.display_name)
-  }
-  if (uniqueSubjects.size > 0) {
-    await supabase.from('centre_subjects').insert(
-      Array.from(uniqueSubjects.entries()).map(([sid, displayName]) => ({
-        centre_id: centreId,
-        subject_id: sid,
-        display_name: displayName || null,
-      }))
-    )
-  }
-
-  // 5. Insert centre_levels (unique levels across all programmes)
-  const allLevelIds = new Set(formPayload.programmes.flatMap((p) => p.level_ids))
-  if (allLevelIds.size > 0) {
-    await supabase.from('centre_levels').insert(
-      Array.from(allLevelIds).map((lid) => ({
-        centre_id: centreId,
-        level_id: lid,
-      }))
-    )
-  }
-
-  // 6. Insert centre_subject_levels (precise pairings)
-  const pairings = formPayload.programmes.flatMap((p) =>
-    p.level_ids.map((lid) => ({
-      centre_id: centreId,
-      subject_id: p.subject_id,
-      level_id: lid,
-    }))
-  )
-  if (pairings.length > 0) {
-    await supabase.from('centre_subject_levels').insert(pairings)
-  }
-
-  // 7. Insert teachers
+  // 4. Insert teachers
   for (const teacher of formPayload.teachers) {
     if (!teacher.name) continue
 
-    const { data: teacherRow, error: teacherError } = await supabase
+    await supabase
       .from('teachers')
       .insert({
         centre_id: centreId,
@@ -188,31 +141,9 @@ export async function createCentre(formPayload: {
         years_experience: teacher.years_experience,
         sort_order: teacher.is_founder ? 0 : 1,
       })
-      .select('id')
-      .single()
-
-    if (teacherError || !teacherRow) continue
-
-    if (teacher.subject_ids.length > 0) {
-      await supabase.from('teacher_subjects').insert(
-        teacher.subject_ids.map((sid) => ({
-          teacher_id: teacherRow.id,
-          subject_id: sid,
-        }))
-      )
-    }
-
-    if (teacher.level_ids.length > 0) {
-      await supabase.from('teacher_levels').insert(
-        teacher.level_ids.map((lid) => ({
-          teacher_id: teacherRow.id,
-          level_id: lid,
-        }))
-      )
-    }
   }
 
-  // 8. Insert trial slots
+  // 5. Insert trial slots
   for (const slot of formPayload.trial_slots) {
     if (!slot.subject_id || !slot.date || !slot.start_time || !slot.end_time) continue
 
@@ -231,6 +162,70 @@ export async function createCentre(formPayload: {
       spots_remaining: slot.max_students,
       notes: slot.notes || null,
     })
+  }
+
+  // 6. Derive centre_subjects from trial slots
+  // Map subject_id → display_name (from raw CSV text if different from canonical name)
+  const subjectDisplayNames = new Map<string, string | null>()
+  for (const slot of formPayload.trial_slots) {
+    if (!slot.subject_id) continue
+    if (subjectDisplayNames.has(slot.subject_id)) continue
+
+    // Look up canonical name
+    const { data: subjectRow } = await supabase
+      .from('subjects')
+      .select('name')
+      .eq('id', slot.subject_id)
+      .single()
+
+    const canonical = subjectRow?.name ?? ''
+    const raw = slot.raw_subject_text.trim()
+
+    // If the raw CSV text differs from the canonical name, use it as display_name
+    const displayName =
+      raw && raw.toLowerCase() !== canonical.toLowerCase() ? raw : null
+
+    subjectDisplayNames.set(slot.subject_id, displayName)
+  }
+
+  if (subjectDisplayNames.size > 0) {
+    await supabase.from('centre_subjects').insert(
+      Array.from(subjectDisplayNames.entries()).map(([sid, displayName]) => ({
+        centre_id: centreId,
+        subject_id: sid,
+        display_name: displayName,
+      }))
+    )
+  }
+
+  // 7. Derive centre_levels from trial slots
+  const uniqueLevelIds = new Set<string>()
+  for (const slot of formPayload.trial_slots) {
+    if (slot.level_id) uniqueLevelIds.add(slot.level_id)
+  }
+
+  if (uniqueLevelIds.size > 0) {
+    await supabase.from('centre_levels').insert(
+      Array.from(uniqueLevelIds).map((lid) => ({
+        centre_id: centreId,
+        level_id: lid,
+      }))
+    )
+  }
+
+  // 8. Derive centre_subject_levels from trial slots
+  const pairingSet = new Set<string>()
+  const pairings: { centre_id: string; subject_id: string; level_id: string }[] = []
+  for (const slot of formPayload.trial_slots) {
+    if (!slot.subject_id || !slot.level_id) continue
+    const key = `${slot.subject_id}:${slot.level_id}`
+    if (pairingSet.has(key)) continue
+    pairingSet.add(key)
+    pairings.push({ centre_id: centreId, subject_id: slot.subject_id, level_id: slot.level_id })
+  }
+
+  if (pairings.length > 0) {
+    await supabase.from('centre_subject_levels').insert(pairings)
   }
 
   revalidatePath('/admin/centres')

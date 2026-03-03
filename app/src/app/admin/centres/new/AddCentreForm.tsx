@@ -1,8 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { createCentre, type TeacherInput, type ProgrammeInput, type TrialSlotInput } from './actions'
-import SubjectTypeahead from './SubjectTypeahead'
+import { createCentre, type TeacherInput, type TrialSlotInput } from './actions'
 import SlotUploader, { type ParsedSlot } from './SlotUploader'
 
 interface Subject {
@@ -19,23 +18,13 @@ interface Level {
   sort_order: number
 }
 
-interface Programme {
-  subject_id: string
-  subject_name: string
-  display_name: string
-  level_ids: string[]
-}
-
 const STEPS = [
   'Basic Info',
-  'Programmes',
   'About',
   'Team',
   'Policies',
   'Schedule',
 ]
-
-type CentreType = 'academic' | 'enrichment' | 'both'
 
 const STUDENT_TYPES = [
   { key: 'struggling', label: 'Struggling — need to catch up' },
@@ -73,23 +62,19 @@ export default function AddCentreForm({
   const [nearestMrt, setNearestMrt] = useState('')
   const [yearsOperating, setYearsOperating] = useState('')
 
-  // Step 2: Programmes
-  const [centreType, setCentreType] = useState<CentreType | null>(null)
-  const [programmes, setProgrammes] = useState<Programme[]>([])
-
-  // Step 3: About
+  // Step 2: About
   const [specialisation, setSpecialisation] = useState('')
   const [studentTypes, setStudentTypes] = useState<Set<string>>(new Set())
   const [teachingApproach, setTeachingApproach] = useState('')
   const [results, setResults] = useState('')
   const [classSize, setClassSize] = useState('')
 
-  // Step 4: Team
+  // Step 3: Team
   const [teachers, setTeachers] = useState<TeacherInput[]>([
     { ...emptyTeacher, is_founder: true, role: 'Founder' },
   ])
 
-  // Step 5: Policies
+  // Step 4: Policies
   const [replacementPolicy, setReplacementPolicy] = useState('')
   const [makeupPolicy, setMakeupPolicy] = useState('')
   const [commitmentTerms, setCommitmentTerms] = useState('')
@@ -97,70 +82,10 @@ export default function AddCentreForm({
   const [paymentTerms, setPaymentTerms] = useState('')
   const [otherPolicies, setOtherPolicies] = useState('')
 
-  // Step 6: Schedule
+  // Step 5: Schedule (required)
   const [importedSlots, setImportedSlots] = useState<ParsedSlot[]>([])
 
-  // ── Derived data ──────────────────────────────────────────────
-
-  // Filter subjects by centre type
-  const filteredSubjects = centreType
-    ? subjects.filter((s) => {
-        if (centreType === 'academic') return s.sort_order < 100
-        if (centreType === 'enrichment') return s.sort_order >= 100
-        return true
-      })
-    : subjects
-
-  // Filter levels by centre type
-  const academicLevelGroups = ['primary', 'secondary', 'jc']
-  const filteredLevels = centreType
-    ? levels.filter((l) => {
-        if (centreType === 'academic') return academicLevelGroups.includes(l.level_group)
-        if (centreType === 'enrichment') return l.level_group === 'other'
-        return true
-      })
-    : levels
-
-  // Group filtered levels
-  const levelGroups: { label: string; group: string; items: Level[] }[] = [
-    { label: 'Primary', group: 'primary', items: filteredLevels.filter((l) => l.level_group === 'primary') },
-    { label: 'Secondary', group: 'secondary', items: filteredLevels.filter((l) => l.level_group === 'secondary') },
-    { label: 'JC', group: 'jc', items: filteredLevels.filter((l) => l.level_group === 'jc') },
-    { label: 'Age Groups / Skill / Music', group: 'other', items: filteredLevels.filter((l) => l.level_group === 'other') },
-  ].filter((g) => g.items.length > 0)
-
-  const selectedSubjectIds = new Set(programmes.map((p) => p.subject_id))
-
-  // ── Handlers ──────────────────────────────────────────────────
-
-  function addProgramme(subject: Subject) {
-    setProgrammes((prev) => [
-      ...prev,
-      { subject_id: subject.id, subject_name: subject.name, display_name: '', level_ids: [] },
-    ])
-  }
-
-  function removeProgramme(subjectId: string) {
-    setProgrammes((prev) => prev.filter((p) => p.subject_id !== subjectId))
-  }
-
-  function updateProgrammeDisplayName(subjectId: string, displayName: string) {
-    setProgrammes((prev) =>
-      prev.map((p) => (p.subject_id === subjectId ? { ...p, display_name: displayName } : p))
-    )
-  }
-
-  function toggleProgrammeLevel(subjectId: string, levelId: string) {
-    setProgrammes((prev) =>
-      prev.map((p) => {
-        if (p.subject_id !== subjectId) return p
-        const ids = p.level_ids.includes(levelId)
-          ? p.level_ids.filter((id) => id !== levelId)
-          : [...p.level_ids, levelId]
-        return { ...p, level_ids: ids }
-      })
-    )
-  }
+  // ── Handlers ──────────────────────────────────────────────
 
   function toggleStudentType(key: string) {
     setStudentTypes((prev) => {
@@ -185,45 +110,22 @@ export default function AddCentreForm({
     setTeachers((prev) => prev.filter((_, i) => i !== index))
   }
 
-  function toggleTeacherSubject(teacherIndex: number, subjectId: string) {
-    setTeachers((prev) =>
-      prev.map((t, i) => {
-        if (i !== teacherIndex) return t
-        const ids = t.subject_ids.includes(subjectId)
-          ? t.subject_ids.filter((id) => id !== subjectId)
-          : [...t.subject_ids, subjectId]
-        return { ...t, subject_ids: ids }
-      })
-    )
-  }
-
-  function toggleTeacherLevel(teacherIndex: number, levelId: string) {
-    setTeachers((prev) =>
-      prev.map((t, i) => {
-        if (i !== teacherIndex) return t
-        const ids = t.level_ids.includes(levelId)
-          ? t.level_ids.filter((id) => id !== levelId)
-          : [...t.level_ids, levelId]
-        return { ...t, level_ids: ids }
-      })
-    )
-  }
-
   function handleSlotsImported(slots: ParsedSlot[]) {
     setImportedSlots(slots)
   }
 
-  // ── Validation ────────────────────────────────────────────────
+  // ── Validation ────────────────────────────────────────────
 
   function canProceed(): boolean {
     if (step === 0) return name.trim().length > 0
-    if (step === 1) return centreType !== null && programmes.length > 0 && programmes.every((p) => p.level_ids.length > 0)
-    if (step === 2) return specialisation.trim().length > 0
-    if (step === 3) return teachers.some((t) => t.name.trim().length > 0)
+    if (step === 1) return specialisation.trim().length > 0
+    if (step === 2) return teachers.some((t) => t.name.trim().length > 0)
     return true
   }
 
-  // ── Submit ────────────────────────────────────────────────────
+  const hasValidSlots = importedSlots.some((s) => s.status === 'ok' || s.status === 'warning')
+
+  // ── Submit ────────────────────────────────────────────────
 
   function handleSubmit() {
     setError(null)
@@ -240,12 +142,7 @@ export default function AddCentreForm({
       trial_fee: s.trial_fee,
       max_students: s.max_students,
       notes: s.notes,
-    }))
-
-    const programmeInputs: ProgrammeInput[] = programmes.map((p) => ({
-      subject_id: p.subject_id,
-      display_name: p.display_name,
-      level_ids: p.level_ids,
+      raw_subject_text: s.raw_subject_text,
     }))
 
     startTransition(async () => {
@@ -255,8 +152,6 @@ export default function AddCentreForm({
         area: area.trim(),
         nearest_mrt: nearestMrt.trim(),
         years_operating: yearsOperating ? parseInt(yearsOperating) : null,
-        centre_type: centreType!,
-        programmes: programmeInputs,
         specialisation: specialisation.trim(),
         student_types: Array.from(studentTypes),
         teaching_approach: teachingApproach.trim(),
@@ -276,9 +171,6 @@ export default function AddCentreForm({
       }
     })
   }
-
-  // All programme levels for teacher linking
-  const allProgrammeLevelIds = new Set(programmes.flatMap((p) => p.level_ids))
 
   return (
     <div>
@@ -309,7 +201,7 @@ export default function AddCentreForm({
               {i < step ? '\u2713' : i + 1}
             </span>
             <span className="hidden sm:inline">{label}</span>
-            {i < STEPS.length - 1 && <span className="text-gray-200 mx-1">\u2014</span>}
+            {i < STEPS.length - 1 && <span className="text-gray-200 mx-1">&mdash;</span>}
           </button>
         ))}
       </div>
@@ -327,7 +219,7 @@ export default function AddCentreForm({
           <div className="space-y-5">
             <div>
               <h2 className="text-lg font-bold text-gray-900">Basic Information</h2>
-              <p className="text-sm text-gray-500 mt-1">From the centre&apos;s onboarding form — Section 1.</p>
+              <p className="text-sm text-gray-500 mt-1">Tell us about the centre.</p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -388,131 +280,17 @@ export default function AddCentreForm({
           </div>
         )}
 
-        {/* ── Step 2: Centre Type & Programmes ───────────────────── */}
+        {/* ── Step 2: About & Teaching ───────────────────────────── */}
         {step === 1 && (
-          <div className="space-y-6">
-            <div>
-              <h2 className="text-lg font-bold text-gray-900">Centre Type &amp; Programmes</h2>
-              <p className="text-sm text-gray-500 mt-1">What does this centre offer?</p>
-            </div>
-
-            {/* Centre type selector */}
-            <div>
-              <p className="text-sm font-medium text-gray-700 mb-3">What type of centre is this?</p>
-              <div className="flex gap-2">
-                {(['academic', 'enrichment', 'both'] as CentreType[]).map((type) => (
-                  <button
-                    key={type}
-                    type="button"
-                    onClick={() => setCentreType(type)}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${
-                      centreType === type
-                        ? 'bg-gray-900 text-white border-gray-900'
-                        : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'
-                    }`}
-                  >
-                    {type.charAt(0).toUpperCase() + type.slice(1)}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Subject typeahead */}
-            {centreType && (
-              <div>
-                <p className="text-sm font-medium text-gray-700 mb-2">Add subjects</p>
-                <SubjectTypeahead
-                  subjects={filteredSubjects}
-                  excludeIds={selectedSubjectIds}
-                  onSelect={addProgramme}
-                  placeholder={`Type to search ${centreType === 'enrichment' ? 'enrichment' : centreType === 'academic' ? 'academic' : ''} subjects...`}
-                />
-              </div>
-            )}
-
-            {/* Programme cards */}
-            {programmes.length > 0 && (
-              <div className="space-y-3">
-                <p className="text-sm font-medium text-gray-700">
-                  {programmes.length} programme{programmes.length !== 1 ? 's' : ''} added
-                </p>
-                {programmes.map((prog) => (
-                  <div key={prog.subject_id} className="border border-gray-200 rounded-lg p-4 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-sm font-bold text-gray-900">{prog.subject_name}</h3>
-                      <button
-                        type="button"
-                        onClick={() => removeProgramme(prog.subject_id)}
-                        className="text-xs text-red-500 hover:text-red-700"
-                      >
-                        Remove
-                      </button>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-medium text-gray-500 mb-1">
-                        Display name <span className="text-gray-400">(optional — centre&apos;s own name)</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={prog.display_name}
-                        onChange={(e) => updateProgrammeDisplayName(prog.subject_id, e.target.value)}
-                        placeholder={`e.g. "Creative Writing & Comprehension" instead of "${prog.subject_name}"`}
-                        className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400"
-                      />
-                    </div>
-
-                    <div>
-                      <p className="text-xs font-medium text-gray-500 mb-2">
-                        Levels <span className="text-red-500">*</span>
-                        {prog.level_ids.length > 0 && (
-                          <span className="text-gray-400 ml-1">({prog.level_ids.length} selected)</span>
-                        )}
-                      </p>
-                      {levelGroups.map((group) => (
-                        <div key={group.group} className="mb-2">
-                          <p className="text-xs text-gray-400 mb-1">{group.label}</p>
-                          <div className="flex flex-wrap gap-1.5">
-                            {group.items.map((l) => (
-                              <button
-                                key={l.id}
-                                type="button"
-                                onClick={() => toggleProgrammeLevel(prog.subject_id, l.id)}
-                                className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
-                                  prog.level_ids.includes(l.id)
-                                    ? 'bg-gray-900 text-white border-gray-900'
-                                    : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
-                                }`}
-                              >
-                                {l.label}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {centreType && programmes.length === 0 && (
-              <p className="text-xs text-gray-400">Search and add at least one subject to continue.</p>
-            )}
-          </div>
-        )}
-
-        {/* ── Step 3: About & Teaching ───────────────────────────── */}
-        {step === 2 && (
           <div className="space-y-5">
             <div>
               <h2 className="text-lg font-bold text-gray-900">About &amp; Teaching</h2>
-              <p className="text-sm text-gray-500 mt-1">Answer these questions to build the centre&apos;s listing description.</p>
+              <p className="text-sm text-gray-500 mt-1">Answer these questions to build your listing description.</p>
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                In one sentence, what does this centre specialise in? <span className="text-red-500">*</span>
+                In one sentence, what do you specialise in? <span className="text-red-500">*</span>
               </label>
               <p className="text-xs text-gray-400 mb-2">
                 e.g. &quot;We specialise in small-group PSLE Mathematics for P4-P6 students.&quot;
@@ -526,7 +304,7 @@ export default function AddCentreForm({
             </div>
 
             <div>
-              <p className="text-sm font-medium text-gray-700 mb-2">What type of student do they help most?</p>
+              <p className="text-sm font-medium text-gray-700 mb-2">What type of student do you help most?</p>
               <div className="space-y-2">
                 {STUDENT_TYPES.map(({ key, label }) => (
                   <label key={key} className="flex items-center gap-2 cursor-pointer">
@@ -544,7 +322,7 @@ export default function AddCentreForm({
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                What makes their teaching approach different?
+                What makes your teaching approach different from others?
               </label>
               <p className="text-xs text-gray-400 mb-2">
                 e.g. concept mastery before drilling, structured answering techniques, past-paper focus
@@ -559,10 +337,10 @@ export default function AddCentreForm({
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                What results have their students achieved?
+                What results have your students achieved?
               </label>
               <p className="text-xs text-gray-400 mb-2">
-                e.g. &quot;80% of P6 students improved by at least one grade band.&quot;
+                e.g. &quot;80% of our P6 students improved by at least one grade band.&quot;
               </p>
               <textarea
                 value={results}
@@ -586,8 +364,8 @@ export default function AddCentreForm({
           </div>
         )}
 
-        {/* ── Step 4: Team ───────────────────────────────────────── */}
-        {step === 3 && (
+        {/* ── Step 3: Team ───────────────────────────────────────── */}
+        {step === 2 && (
           <div className="space-y-6">
             <div>
               <h2 className="text-lg font-bold text-gray-900">Team</h2>
@@ -661,54 +439,6 @@ export default function AddCentreForm({
                     />
                   </div>
                 </div>
-
-                {/* Teacher subjects (from programmes) */}
-                {programmes.length > 0 && (
-                  <div>
-                    <p className="text-xs font-medium text-gray-600 mb-2">Subjects this teacher handles</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {programmes.map((p) => (
-                        <button
-                          key={p.subject_id}
-                          type="button"
-                          onClick={() => toggleTeacherSubject(idx, p.subject_id)}
-                          className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
-                            teacher.subject_ids.includes(p.subject_id)
-                              ? 'bg-blue-50 text-blue-700 border-blue-200'
-                              : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
-                          }`}
-                        >
-                          {p.display_name || p.subject_name}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Teacher levels (from programmes) */}
-                {allProgrammeLevelIds.size > 0 && (
-                  <div>
-                    <p className="text-xs font-medium text-gray-600 mb-2">Levels this teacher handles</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {levels
-                        .filter((l) => allProgrammeLevelIds.has(l.id))
-                        .map((l) => (
-                          <button
-                            key={l.id}
-                            type="button"
-                            onClick={() => toggleTeacherLevel(idx, l.id)}
-                            className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
-                              teacher.level_ids.includes(l.id)
-                                ? 'bg-blue-50 text-blue-700 border-blue-200'
-                                : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
-                            }`}
-                          >
-                            {l.label}
-                          </button>
-                        ))}
-                    </div>
-                  </div>
-                )}
               </div>
             ))}
 
@@ -722,12 +452,12 @@ export default function AddCentreForm({
           </div>
         )}
 
-        {/* ── Step 5: Policies ───────────────────────────────────── */}
-        {step === 4 && (
+        {/* ── Step 4: Policies ───────────────────────────────────── */}
+        {step === 3 && (
           <div className="space-y-5">
             <div>
               <h2 className="text-lg font-bold text-gray-900">Policies</h2>
-              <p className="text-sm text-gray-500 mt-1">From Section 6 — parents always ask about these.</p>
+              <p className="text-sm text-gray-500 mt-1">Parents always ask about these — fill in what you can.</p>
             </div>
 
             <div>
@@ -795,13 +525,13 @@ export default function AddCentreForm({
           </div>
         )}
 
-        {/* ── Step 6: Schedule ───────────────────────────────────── */}
-        {step === 5 && (
+        {/* ── Step 5: Schedule (required) ──────────────────────── */}
+        {step === 4 && (
           <div className="space-y-5">
             <div>
               <h2 className="text-lg font-bold text-gray-900">Trial Slot Schedule</h2>
               <p className="text-sm text-gray-500 mt-1">
-                Upload the centre&apos;s trial class schedule. This step is optional — you can add slots later.
+                Upload the centre&apos;s trial class schedule. Subjects and levels will be auto-detected from the data.
               </p>
             </div>
 
@@ -824,7 +554,6 @@ export default function AddCentreForm({
               <SlotUploader
                 subjects={subjects}
                 levels={levels}
-                programmes={programmes}
                 onSlotsReady={handleSlotsImported}
               />
             )}
@@ -848,19 +577,20 @@ export default function AddCentreForm({
         </button>
 
         <div className="flex items-center gap-3">
-          {/* Create Centre button always visible on last step, also available on step 5+ */}
-          {step >= 4 && (
+          {step === STEPS.length - 1 && (
             <button
               type="button"
               onClick={handleSubmit}
-              disabled={isPending || !name.trim()}
+              disabled={isPending || !hasValidSlots || !name.trim()}
               className={`text-sm font-medium px-6 py-2.5 rounded-lg transition-colors ${
                 isPending
                   ? 'bg-gray-300 text-gray-500 cursor-wait'
-                  : 'bg-gray-900 text-white hover:bg-gray-800'
+                  : hasValidSlots && name.trim()
+                  ? 'bg-gray-900 text-white hover:bg-gray-800'
+                  : 'bg-gray-200 text-gray-400 cursor-not-allowed'
               }`}
             >
-              {isPending ? 'Creating...' : step === 5 ? 'Create Centre' : 'Skip Schedule & Create'}
+              {isPending ? 'Creating...' : 'Create Centre'}
             </button>
           )}
 

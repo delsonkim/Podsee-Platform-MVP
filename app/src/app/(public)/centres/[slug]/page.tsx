@@ -56,7 +56,8 @@ export default async function CentreProfilePage({
     centre.makeup_class_policy ||
     centre.commitment_terms ||
     centre.notice_period_terms ||
-    centre.payment_terms
+    centre.payment_terms ||
+    centre.other_policies
 
   const hasPractical = centre.address || centre.nearest_mrt || centre.parking_info
 
@@ -161,6 +162,7 @@ export default async function CentreProfilePage({
                 <PolicyCard title="Commitment" body={centre.commitment_terms} />
                 <PolicyCard title="Notice period" body={centre.notice_period_terms} />
                 <PolicyCard title="Payment" body={centre.payment_terms} />
+                <PolicyCard title="Other" body={centre.other_policies} />
               </div>
             </Section>
           )}

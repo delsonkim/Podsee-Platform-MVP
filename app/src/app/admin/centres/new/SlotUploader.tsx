@@ -16,16 +16,10 @@ interface Level {
   sort_order: number
 }
 
-interface Programme {
-  subject_id: string
-  subject_name: string
-  display_name: string
-  level_ids: string[]
-}
-
 export interface ParsedSlot {
   subject_id: string | null
   subject_name: string
+  raw_subject_text: string
   level_id: string | null
   level_label: string
   age_min: number | null
@@ -44,7 +38,6 @@ export interface ParsedSlot {
 interface Props {
   subjects: Subject[]
   levels: Level[]
-  programmes: Programme[]
   onSlotsReady: (slots: ParsedSlot[]) => void
 }
 
@@ -68,6 +61,10 @@ function matchSubject(raw: string, subjects: Subject[]): Subject | null {
   const aliases: Record<string, string> = {
     math: 'Mathematics',
     maths: 'Mathematics',
+    'e math': 'Elementary Mathematics',
+    'a math': 'Additional Mathematics',
+    'emath': 'Elementary Mathematics',
+    'amath': 'Additional Mathematics',
     english: 'English Language',
     chinese: 'Chinese Language',
     malay: 'Malay Language',
@@ -81,6 +78,8 @@ function matchSubject(raw: string, subjects: Subject[]): Subject | null {
     gp: 'General Paper',
     ss: 'Social Studies',
     coding: 'Coding / Programming',
+    poa: 'Principles of Accounts',
+    econs: 'Economics',
   }
   const aliased = aliases[n]
   if (aliased) return subjects.find((s) => normalise(s.name) === normalise(aliased)) ?? null
@@ -91,11 +90,11 @@ function matchLevel(raw: string, levels: Level[]): { level: Level | null; ageMin
   const n = normalise(raw)
   if (!n) return { level: null, ageMin: null, ageMax: null, customLevel: null }
 
-  // Match by code (P4, SEC1, JC2, BEG, etc.)
+  // Match by code (P4, SEC1, JC2, BEG, IP1, NA1, etc.)
   const byCode = levels.find((l) => normalise(l.code) === n)
   if (byCode) return { level: byCode, ageMin: null, ageMax: null, customLevel: null }
 
-  // Match by label (Primary 4, Secondary 1, etc.)
+  // Match by label (Primary 4, Secondary 1, IP Year 1, Normal Academic 1, etc.)
   const byLabel = levels.find((l) => normalise(l.label) === n)
   if (byLabel) return { level: byLabel, ageMin: null, ageMax: null, customLevel: null }
 
@@ -109,6 +108,20 @@ function matchLevel(raw: string, levels: Level[]): { level: Level | null; ageMin
   const sec = n.match(/^sec\s*(\d)$/)
   if (sec) {
     const match = levels.find((l) => normalise(l.code) === `sec${sec[1]}`)
+    if (match) return { level: match, ageMin: null, ageMax: null, customLevel: null }
+  }
+
+  // IP shorthand
+  const ip = n.match(/^ip\s*(?:year\s*)?(\d)$/)
+  if (ip) {
+    const match = levels.find((l) => normalise(l.code) === `ip${ip[1]}`)
+    if (match) return { level: match, ageMin: null, ageMax: null, customLevel: null }
+  }
+
+  // Normal Academic shorthand
+  const na = n.match(/^(?:n\(?a\)?\s*|normal\s*(?:academic\s*)?)(\d)$/i)
+  if (na) {
+    const match = levels.find((l) => normalise(l.code) === `na${na[1]}`)
     if (match) return { level: match, ageMin: null, ageMax: null, customLevel: null }
   }
 
@@ -197,6 +210,7 @@ function parseRows(rawText: string, subjects: Subject[], levels: Level[]): Parse
     return {
       subject_id: subjectMatch?.id ?? null,
       subject_name: subjectMatch?.name ?? rawSubject ?? '',
+      raw_subject_text: rawSubject ?? '',
       level_id: levelMatch.level?.id ?? null,
       level_label: levelMatch.level?.label ?? rawLevel ?? '',
       age_min: levelMatch.ageMin,
@@ -214,17 +228,11 @@ function parseRows(rawText: string, subjects: Subject[], levels: Level[]): Parse
   })
 }
 
-export default function SlotUploader({ subjects, levels, programmes, onSlotsReady }: Props) {
+export default function SlotUploader({ subjects, levels, onSlotsReady }: Props) {
   const [tab, setTab] = useState<'csv' | 'paste'>('csv')
   const [pasteText, setPasteText] = useState('')
   const [parsed, setParsed] = useState<ParsedSlot[] | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
-
-  // Filter to only subjects/levels the centre offers
-  const centreSubjectIds = new Set(programmes.map((p) => p.subject_id))
-  const centreLevelIds = new Set(programmes.flatMap((p) => p.level_ids))
-  const centreSubjects = subjects.filter((s) => centreSubjectIds.has(s.id))
-  const centreLevels = levels.filter((l) => centreLevelIds.has(l.id))
 
   function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -232,7 +240,7 @@ export default function SlotUploader({ subjects, levels, programmes, onSlotsRead
     const reader = new FileReader()
     reader.onload = (ev) => {
       const text = ev.target?.result as string
-      const rows = parseRows(text, centreSubjects.length > 0 ? centreSubjects : subjects, centreLevels.length > 0 ? centreLevels : levels)
+      const rows = parseRows(text, subjects, levels)
       setParsed(rows)
     }
     reader.readAsText(file)
@@ -240,19 +248,13 @@ export default function SlotUploader({ subjects, levels, programmes, onSlotsRead
 
   function handlePaste() {
     if (!pasteText.trim()) return
-    const rows = parseRows(pasteText, centreSubjects.length > 0 ? centreSubjects : subjects, centreLevels.length > 0 ? centreLevels : levels)
+    const rows = parseRows(pasteText, subjects, levels)
     setParsed(rows)
   }
 
   function downloadTemplate() {
     const header = 'Subject,Level,Date,Start Time,End Time,Trial Fee ($),Max Students,Notes'
-    const example = programmes.length > 0
-      ? programmes.map((p) => {
-          const lvl = levels.find((l) => p.level_ids.includes(l.id))
-          return `${p.subject_name},${lvl?.label ?? ''},2026-03-15,09:00,10:00,25,4,`
-        }).join('\n')
-      : 'Mathematics,Primary 4,2026-03-15,09:00,10:00,25,4,Bring calculator'
-
+    const example = 'Mathematics,Primary 4,2026-03-15,09:00,10:00,25,4,Bring calculator'
     const csv = `${header}\n${example}\n`
     const blob = new Blob([csv], { type: 'text/csv' })
     const url = URL.createObjectURL(blob)
