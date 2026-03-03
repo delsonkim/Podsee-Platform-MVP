@@ -1,6 +1,8 @@
 import { Resend } from 'resend'
 
-const resend = new Resend(process.env.RESEND_API_KEY)
+const resend = process.env.RESEND_API_KEY
+  ? new Resend(process.env.RESEND_API_KEY)
+  : null
 
 const FROM_EMAIL = 'Podsee <bookings@podsee.sg>'
 
@@ -171,6 +173,11 @@ export async function sendBookingConfirmation(data: BookingEmailData) {
 </body>
 </html>
   `.trim()
+
+  if (!resend) {
+    console.warn('[email] RESEND_API_KEY not set — skipping email send')
+    return
+  }
 
   const { error } = await resend.emails.send({
     from: FROM_EMAIL,

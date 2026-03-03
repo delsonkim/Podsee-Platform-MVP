@@ -1,15 +1,16 @@
 'use server'
 
 import { redirect } from 'next/navigation'
+import { randomBytes } from 'crypto'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { sendBookingConfirmation } from '@/lib/email'
 
-// Generates a readable booking ref: PSE-YYMMDD-XXXX
+// Generates a readable booking ref: PSE-YYMMDD-XXXX (crypto-safe)
 function generateRef(): string {
   const now = new Date()
   const date = now.toISOString().slice(2, 10).replace(/-/g, '')
-  const rand = Math.random().toString(36).slice(2, 6).toUpperCase()
+  const rand = randomBytes(3).toString('base64url').slice(0, 4).toUpperCase()
   return `PSE-${date}-${rand}`
 }
 
@@ -69,32 +70,42 @@ export async function submitBooking(formData: FormData) {
     throw new Error('Sorry, this slot is now full. Please choose another.')
   }
 
-  const bookingRef = generateRef()
-
-  const { error: insertError } = await supabase.from('bookings').insert({
-    booking_ref: bookingRef,
-    trial_slot_id: slotId,
-    centre_id: slot.centre_id,
-    parent_id: parent.id,
-    parent_name_at_booking: parentName,
-    parent_email_at_booking: parentEmail,
-    parent_phone_at_booking: parentPhone || null,
-    child_name_at_booking: childName,
-    child_level_at_booking: childLevel,
-    trial_fee_at_booking: slot.trial_fee,
-    referral_source: referralSource || null,
-    status: 'pending',
-  })
-
-  if (insertError) {
-    throw new Error('Booking failed. Please try again.')
+  // Atomic decrement — prevents overbooking under concurrent requests
+  const { data: decremented, error: decError } = await supabase.rpc('decrement_spots', { slot_id: slotId })
+  if (decError || decremented === 0) {
+    throw new Error('Sorry, this slot just filled up. Please choose another.')
   }
 
-  // Decrement spots_remaining (best-effort; race condition acceptable at MVP scale)
-  await supabase
-    .from('trial_slots')
-    .update({ spots_remaining: Math.max(0, slot.spots_remaining - 1) })
-    .eq('id', slotId)
+  // Insert booking with retry on ref collision (up to 3 attempts)
+  let bookingRef = ''
+  let insertError = null
+  for (let attempt = 0; attempt < 3; attempt++) {
+    bookingRef = generateRef()
+    const result = await supabase.from('bookings').insert({
+      booking_ref: bookingRef,
+      trial_slot_id: slotId,
+      centre_id: slot.centre_id,
+      parent_id: parent.id,
+      parent_name_at_booking: parentName,
+      parent_email_at_booking: parentEmail,
+      parent_phone_at_booking: parentPhone || null,
+      child_name_at_booking: childName,
+      child_level_at_booking: childLevel,
+      trial_fee_at_booking: slot.trial_fee,
+      referral_source: referralSource || null,
+      status: 'pending',
+    })
+    insertError = result.error
+    if (!insertError) break
+    // If it's not a unique constraint violation, don't retry
+    if (!insertError.message?.includes('unique') && !insertError.code?.includes('23505')) break
+  }
+
+  if (insertError) {
+    // Restore the spot since booking failed
+    await supabase.rpc('increment_spots', { slot_id: slotId })
+    throw new Error('Booking failed. Please try again.')
+  }
 
   // Send confirmation email (fire-and-forget — don't block the redirect)
   const { data: fullSlot } = await supabase
