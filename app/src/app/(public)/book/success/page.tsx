@@ -17,10 +17,10 @@ export default async function BookingSuccessPage({
       </div>
 
       <h1 className="font-display font-extrabold text-2xl text-forest mb-2">
-        Your trial is booked
+        Your trial is confirmed!
       </h1>
       <p className="text-sm text-sage mb-8">
-        We&apos;ll confirm your slot within 1 business day via email.
+        You&apos;ll receive a confirmation email shortly with all the details.
       </p>
 
       {ref && (
@@ -39,9 +39,9 @@ export default async function BookingSuccessPage({
         </p>
         <ol className="space-y-3">
           {[
-            'Podsee contacts the centre to confirm your spot.',
-            "You'll receive a confirmation email with the centre's address and any preparation notes.",
-            'After the trial, let us know if your child is enrolling — and earn a cash reward.',
+            'The centre has been notified — your spot is secured.',
+            "Check your email for the centre's address and preparation notes.",
+            'After the trial, let us know how it went!',
           ].map((step, i) => (
             <li key={i} className="flex gap-3 text-sm text-sage">
               <span className="font-display font-bold text-fern shrink-0">{i + 1}</span>

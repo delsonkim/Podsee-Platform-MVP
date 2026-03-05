@@ -106,7 +106,7 @@ All centre dashboard pages query with a `WHERE centre_id = ?` filter using the l
   - [x] Policies in expandable accordion (not walls of text)
   - [ ] Location map section
   - [ ] FAQ section (reduces WhatsApp queries)
-- [ ] Booking success page — Update copy to match instant-confirm flow:
+- [x] Booking success page — Update copy to match instant-confirm flow:
   - Change "We'll confirm your slot within 1 business day via email" → "Your trial is confirmed!"
   - Step 1: Remove "Podsee contacts the centre to confirm your spot" (instant confirmed now)
   - Step 3: Remove "earn a cash reward" (OFF). Replace with "After the trial, let us know how it went."
@@ -115,8 +115,8 @@ All centre dashboard pages query with a `WHERE centre_id = ?` filter using the l
   - On click, show prompt: "Have another child who wants to trial for the same slot?"
   - If `spots_remaining <= 0` → show "Full" badge, disable booking button
   - Both states should be visually distinct (Already booked = blue/info, Full = grey/disabled)
-- [ ] Duplicate booking logic (server-side) — Relax current check: allow same parent + same slot if `child_name_at_booking` is different (case-insensitive). Block only same parent + same slot + same child name. Show friendly inline error instead of runtime error.
-- [ ] Booking form error handling — Catch server action errors and display as inline form messages (not raw runtime errors)
+- [x] Duplicate booking logic (server-side) — Relax current check: allow same parent + same slot if `child_name_at_booking` is different (case-insensitive). Block only same parent + same slot + same child name. Show friendly inline error instead of runtime error.
+- [x] Booking form error handling — Catch server action errors and display as inline form messages (not raw runtime errors)
 - [ ] Booking flow — ClassPass-style streamlined checkout:
   - Fewer fields, cleaner layout
   - Clear price breakdown

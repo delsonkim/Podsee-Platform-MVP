@@ -136,9 +136,15 @@ export async function addDraftSlots(
 
   if (error) return { error: error.message }
 
-  // If trusted, re-derive centre_subjects/levels from all live slots
   if (isTrusted) {
+    // Trusted: slots go live immediately, re-derive centre_subjects/levels
     await rederiveCentreSubjectsAndLevels(supabase, centreId)
+  } else {
+    // Draft slots: flag centre for admin review queue
+    await supabase
+      .from('centres')
+      .update({ has_pending_changes: true })
+      .eq('id', centreId)
   }
 
   revalidatePath('/centre-dashboard/slots')
