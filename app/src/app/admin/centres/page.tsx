@@ -7,7 +7,7 @@ export default async function CentresPage() {
   const { data: centres } = await supabase
     .from('centres')
     .select(`
-      id, name, slug, area, is_active, is_paused, created_at,
+      id, name, slug, area, is_active, is_paused, has_pending_changes, created_at,
       centre_subjects(subjects(name)),
       centre_levels(levels(label))
     `)
@@ -64,15 +64,19 @@ export default async function CentresPage() {
                   .map((cs: any) => cs.subjects?.name)
                   .filter(Boolean)
                 const status = !c.is_active
-                  ? { label: 'Inactive', color: 'bg-gray-100 text-gray-500' }
+                  ? { label: 'Onboarding', color: 'bg-blue-100 text-blue-800' }
                   : c.is_paused
                   ? { label: 'Paused', color: 'bg-amber-100 text-amber-800' }
+                  : c.has_pending_changes
+                  ? { label: 'Active', color: 'bg-green-100 text-green-800', dot: 'bg-amber-400' }
                   : { label: 'Active', color: 'bg-green-100 text-green-800' }
 
                 return (
                   <tr key={c.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3">
-                      <span className="font-medium text-gray-900">{c.name}</span>
+                      <Link href={`/admin/centres/${c.id}`} className="font-medium text-gray-900 hover:text-blue-600 transition-colors">
+                        {c.name}
+                      </Link>
                       <p className="text-xs text-gray-400 mt-0.5">/{c.slug}</p>
                     </td>
                     <td className="px-4 py-3 text-gray-600">{c.area || '—'}</td>
@@ -89,7 +93,8 @@ export default async function CentresPage() {
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`text-xs font-medium px-2 py-1 rounded-full ${status.color}`}>
+                      <span className={`text-xs font-medium px-2 py-1 rounded-full ${status.color} inline-flex items-center gap-1`}>
+                        {'dot' in status && <span className={`w-1.5 h-1.5 rounded-full ${(status as any).dot}`} />}
                         {status.label}
                       </span>
                     </td>

@@ -68,8 +68,13 @@ export interface Centre {
   image_urls: string[]
   trial_type: 'free' | 'paid'
   paynow_qr_image_url: string | null
+  trial_commission_rate: number
+  conversion_commission_rate: number
+  draft_data: Record<string, unknown> | null
+  has_pending_changes: boolean
   is_active: boolean
   is_paused: boolean
+  is_trusted: boolean
   created_at: string
   updated_at: string
 }
@@ -105,6 +110,7 @@ export interface TrialSlot {
   trial_fee: number
   max_students: number
   spots_remaining: number
+  is_draft: boolean
   notes: string | null
   created_at: string
   updated_at: string
@@ -156,6 +162,8 @@ export interface TrialOutcome {
   booking_id: string
   parent_reported_status: ParentReportedEnrolment | null
   reported_at: string | null
+  centre_reported_status: ParentReportedEnrolment | null
+  centre_reported_at: string | null
   admin_verified: boolean
   admin_verified_at: string | null
   admin_notes: string | null
@@ -167,6 +175,7 @@ export interface Commission {
   id: string
   trial_outcome_id: string
   centre_id: string
+  commission_type: 'trial' | 'conversion'
   commission_amount: number
   status: CommissionStatus
   invoice_number: string | null

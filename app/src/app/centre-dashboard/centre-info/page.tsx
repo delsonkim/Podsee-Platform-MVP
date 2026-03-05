@@ -1,5 +1,9 @@
 import { requireCentreUser } from '@/lib/centre-auth'
 import { createAdminClient } from '@/lib/supabase/admin'
+import ProfileForm from './ProfileForm'
+import LocationForm from './LocationForm'
+import PoliciesForm from './PoliciesForm'
+import ImagesForm from './ImagesForm'
 
 async function getCentreDetails(centreId: string) {
   const supabase = createAdminClient()
@@ -32,10 +36,20 @@ export default async function CentreInfoPage() {
     return <p className="text-gray-400">Centre not found.</p>
   }
 
-  const subjects = ((centre as any).centre_subjects as any[])
+  const c = centre as any
+  const isLive = c.is_active === true
+  const draft = (c.draft_data as Record<string, unknown>) ?? {}
+
+  // For live centres with pending changes, show draft values in forms
+  const eff = (field: string) => {
+    if (isLive && field in draft) return draft[field]
+    return c[field]
+  }
+
+  const subjects = (c.centre_subjects as any[])
     ?.map((cs: any) => cs.subjects?.name)
     .filter(Boolean) ?? []
-  const levels = ((centre as any).centre_levels as any[])
+  const levels = (c.centre_levels as any[])
     ?.map((cl: any) => cl.levels?.label)
     .filter(Boolean) ?? []
 
@@ -43,48 +57,74 @@ export default async function CentreInfoPage() {
     <div className="max-w-3xl space-y-6">
       <div>
         <h1 className="text-2xl font-semibold text-gray-900">Centre Info</h1>
-        <p className="text-sm text-gray-500 mt-1">Your centre details as shown on Podsee.</p>
+        <p className="text-sm text-gray-500 mt-1">
+          {isLive
+            ? 'Edit your centre details. Changes will be reviewed before going live.'
+            : 'Fill in your centre details. Changes save directly during onboarding.'}
+        </p>
       </div>
 
+      {c.has_pending_changes && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
+          <p className="text-sm text-amber-800">You have pending changes awaiting review by Podsee.</p>
+        </div>
+      )}
+
+      {/* Read-only fields (admin-managed) */}
       <div className="bg-white rounded-lg border border-gray-200 p-5">
-        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Details</p>
+        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
+          Details <span className="text-gray-400 font-normal">(managed by Podsee)</span>
+        </p>
         <dl>
-          <Row label="Name" value={centre.name} />
-          <Row label="Area" value={centre.area} />
-          <Row label="Address" value={centre.address} />
-          <Row label="Contact Email" value={centre.contact_email} />
-          <Row label="Nearest MRT" value={centre.nearest_mrt} />
-          <Row label="Parking" value={centre.parking_info} />
-          <Row label="Class Size" value={centre.class_size} />
-          <Row label="Years Operating" value={centre.years_operating} />
+          <Row label="Name" value={c.name} />
+          <Row label="Slug" value={`/${c.slug}`} />
+          <Row label="Contact Email" value={c.contact_email} />
           <Row label="Subjects" value={subjects.length > 0 ? subjects.join(', ') : null} />
           <Row label="Levels" value={levels.length > 0 ? levels.join(', ') : null} />
         </dl>
       </div>
 
-      {(centre.teaching_style || centre.track_record) && (
-        <div className="bg-white rounded-lg border border-gray-200 p-5">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Teaching</p>
-          <dl>
-            {centre.teaching_style && <Row label="Teaching Style" value={centre.teaching_style} />}
-            {centre.track_record && <Row label="Track Record" value={centre.track_record} />}
-          </dl>
-        </div>
-      )}
+      {/* Editable sections */}
+      <ProfileForm
+        initial={{
+          description: (eff('description') as string) ?? '',
+          teaching_style: (eff('teaching_style') as string) ?? '',
+          track_record: (eff('track_record') as string) ?? '',
+          class_size: (eff('class_size') as number | null) ?? null,
+          years_operating: (eff('years_operating') as number | null) ?? null,
+        }}
+        isLive={isLive}
+      />
 
-      {(centre.replacement_class_policy || centre.makeup_class_policy || centre.commitment_terms || centre.payment_terms) && (
-        <div className="bg-white rounded-lg border border-gray-200 p-5">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Policies</p>
-          <dl>
-            {centre.replacement_class_policy && <Row label="Replacement Class" value={centre.replacement_class_policy} />}
-            {centre.makeup_class_policy && <Row label="Makeup Class" value={centre.makeup_class_policy} />}
-            {centre.commitment_terms && <Row label="Commitment" value={centre.commitment_terms} />}
-            {centre.notice_period_terms && <Row label="Notice Period" value={centre.notice_period_terms} />}
-            {centre.payment_terms && <Row label="Payment" value={centre.payment_terms} />}
-            {centre.other_policies && <Row label="Other" value={centre.other_policies} />}
-          </dl>
-        </div>
-      )}
+      <LocationForm
+        initial={{
+          address: (eff('address') as string) ?? '',
+          area: (eff('area') as string) ?? '',
+          nearest_mrt: (eff('nearest_mrt') as string) ?? '',
+          parking_info: (eff('parking_info') as string) ?? '',
+        }}
+        isLive={isLive}
+      />
+
+      <PoliciesForm
+        initial={{
+          replacement_class_policy: (eff('replacement_class_policy') as string) ?? '',
+          makeup_class_policy: (eff('makeup_class_policy') as string) ?? '',
+          commitment_terms: (eff('commitment_terms') as string) ?? '',
+          notice_period_terms: (eff('notice_period_terms') as string) ?? '',
+          payment_terms: (eff('payment_terms') as string) ?? '',
+          other_policies: (eff('other_policies') as string) ?? '',
+        }}
+        isLive={isLive}
+      />
+
+      <ImagesForm
+        initial={{
+          image_urls: (eff('image_urls') as string[]) ?? [],
+          paynow_qr_image_url: (eff('paynow_qr_image_url') as string | null) ?? null,
+        }}
+        isLive={isLive}
+      />
     </div>
   )
 }

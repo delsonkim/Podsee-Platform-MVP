@@ -61,6 +61,7 @@ export async function getCentres(): Promise<CentreSummary[]> {
       .eq('is_paused', false)
       .gte('trial_slots.date', today)
       .gt('trial_slots.spots_remaining', 0)
+      .eq('trial_slots.is_draft', false)
       .order('name')
 
     if (error || !data) return []
@@ -98,6 +99,7 @@ export async function getCentreBySlug(slug: string): Promise<CentreDetail | null
       .eq('is_active', true)
       .gte('trial_slots.date', today)
       .gt('trial_slots.spots_remaining', 0)
+      .eq('trial_slots.is_draft', false)
       .single()
 
     if (error || !data) return null

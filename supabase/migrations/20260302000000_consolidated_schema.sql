@@ -9,6 +9,7 @@
 
 -- ── Reset: drop everything if it exists (safe to re-run) ─────
 
+DROP TABLE IF EXISTS parse_corrections  CASCADE;
 DROP TABLE IF EXISTS reviews            CASCADE;
 DROP TABLE IF EXISTS rewards            CASCADE;
 DROP TABLE IF EXISTS commissions        CASCADE;
@@ -184,6 +185,8 @@ CREATE TABLE centres (
   parking_info                text,
   description                 text,
   teaching_style              text,
+  teacher_bio                 text,
+  teacher_qualifications      text,
   class_size                  int,
   replacement_class_policy    text,
   makeup_class_policy         text,
@@ -199,8 +202,11 @@ CREATE TABLE centres (
   paynow_qr_image_url        text,
   trial_commission_rate       numeric(8,2) DEFAULT 0,
   conversion_commission_rate  numeric(8,2) DEFAULT 0,
-  is_active                   boolean     NOT NULL DEFAULT true,
+  draft_data                  jsonb,
+  has_pending_changes         boolean     NOT NULL DEFAULT false,
+  is_active                   boolean     NOT NULL DEFAULT false,
   is_paused                   boolean     NOT NULL DEFAULT false,
+  is_trusted                  boolean     NOT NULL DEFAULT false,
   created_at                  timestamptz NOT NULL DEFAULT now(),
   updated_at                  timestamptz NOT NULL DEFAULT now()
 );
@@ -211,6 +217,7 @@ CREATE TRIGGER trg_centres_updated_at
 
 CREATE INDEX idx_centres_is_active ON centres(is_active);
 CREATE INDEX idx_centres_is_paused ON centres(is_paused);
+CREATE INDEX idx_centres_pending ON centres(has_pending_changes) WHERE has_pending_changes = true;
 
 
 -- ── centre_subjects (junction) ────────────────────────────────
@@ -343,6 +350,7 @@ CREATE TABLE trial_slots (
   trial_fee        numeric(8,2) NOT NULL,
   max_students     int          NOT NULL DEFAULT 1,
   spots_remaining  int          NOT NULL DEFAULT 1,
+  is_draft         boolean      NOT NULL DEFAULT false,
   notes            text,
   created_at       timestamptz  NOT NULL DEFAULT now(),
   updated_at       timestamptz  NOT NULL DEFAULT now(),
@@ -368,6 +376,7 @@ CREATE INDEX idx_trial_slots_subject_id  ON trial_slots(subject_id);
 CREATE INDEX idx_trial_slots_level_id    ON trial_slots(level_id);
 CREATE INDEX idx_trial_slots_centre_date ON trial_slots(centre_id, date);
 CREATE INDEX idx_trial_slots_available   ON trial_slots(centre_id, date) WHERE spots_remaining > 0;
+CREATE INDEX idx_trial_slots_draft       ON trial_slots(is_draft) WHERE is_draft = true;
 
 
 -- ── bookings ──────────────────────────────────────────────────
@@ -512,9 +521,32 @@ CREATE TABLE reviews (
   updated_at  timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TRIGGER trg_reviews_updated_at
+  BEFORE UPDATE ON reviews
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
 CREATE INDEX idx_reviews_centre_id ON reviews(centre_id);
 CREATE INDEX idx_reviews_status    ON reviews(status);
 CREATE INDEX idx_reviews_parent_id ON reviews(parent_id);
+
+
+-- ── parse_corrections (AI parser self-learning) ─────────────
+
+CREATE TABLE parse_corrections (
+  id              uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  centre_id       uuid        REFERENCES centres(id) ON DELETE CASCADE,
+  field_type      text        NOT NULL,
+  ai_raw_text     text        NOT NULL,
+  ai_value        text,
+  ai_match_id     uuid,
+  ai_confidence   text,
+  user_value      text        NOT NULL,
+  user_match_id   uuid,
+  created_at      timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_parse_corrections_centre ON parse_corrections(centre_id);
+CREATE INDEX idx_parse_corrections_field ON parse_corrections(field_type);
 
 
 -- ── Storage bucket ────────────────────────────────────────────
@@ -572,7 +604,33 @@ INSERT INTO subjects (name, sort_order) VALUES
   ('Coding / Programming', 502),
   ('Creative Writing',     503),
   ('Public Speaking',      504),
-  ('Abacus / Mental Maths',505);
+  ('Abacus / Mental Maths',505),
+  -- MOE subjects (secondary academic)
+  ('Nutrition and Food Science',  26),
+  ('Design & Technology',         27),
+  ('Business Studies',            28),
+  ('Computing',                   29),
+  ('Exercise and Sports Science', 30),
+  ('Electronics',                 31),
+  -- Mother Tongue variants
+  ('Higher Malay',                32),
+  ('Higher Tamil',                33),
+  ('Literature in Chinese',       34),
+  ('Literature in Malay',         35),
+  ('Literature in Tamil',         36),
+  -- Combined Humanities (Mother Tongue Literature electives)
+  ('Combined Humanities (SS/Lit in Chinese)', 37),
+  ('Combined Humanities (SS/Lit in Malay)',   38),
+  ('Combined Humanities (SS/Lit in Tamil)',   39),
+  -- JC / A-Level subjects
+  ('Further Mathematics',           40),
+  ('Management of Business',        41),
+  ('English Language and Linguistics', 42),
+  ('China Studies in English',      43),
+  ('China Studies in Chinese',      44),
+  ('Music',                         45),
+  -- Combined Science variant
+  ('Combined Science (Physics/Biology)', 46);
 
 
 -- ── Seed: levels ──────────────────────────────────────────────

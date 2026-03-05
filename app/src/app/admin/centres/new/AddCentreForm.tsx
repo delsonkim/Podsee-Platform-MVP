@@ -1,9 +1,16 @@
 'use client'
 
 import { useRef, useState, useTransition } from 'react'
-import { createCentre, type TeacherInput, type TrialSlotInput } from './actions'
+import {
+  createMinimalCentre,
+  updateCentreStep,
+  addSlotsForCentre,
+  type TeacherInput,
+  type TrialSlotInput,
+} from './actions'
 import { uploadCentreImage, uploadPaynowQr } from './image-actions'
-import SlotUploader, { type ParsedSlot } from './SlotUploader'
+import SlotUploader, { type ParsedSlot } from '@/components/SlotUploader'
+import { parseSchedule, parseScheduleImage, createCustomSubject, saveParseCorrections } from './actions'
 
 interface Subject {
   id: string
@@ -55,6 +62,8 @@ export default function AddCentreForm({
   const [step, setStep] = useState(0)
   const [isPending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
+  const [centreId, setCentreId] = useState<string | null>(null)
+  const [stepSaving, setStepSaving] = useState(false)
 
   // Centre images (up to 3)
   const [imageUrls, setImageUrls] = useState<string[]>([])
@@ -169,10 +178,87 @@ export default function AddCentreForm({
 
   const hasValidSlots = importedSlots.some((s) => s.status === 'ok' || s.status === 'warning')
 
-  // ── Submit ────────────────────────────────────────────────
+  // ── Progressive save per step ────────────────────────────
 
-  function handleSubmit() {
+  async function handleNext() {
     setError(null)
+    setStepSaving(true)
+
+    try {
+      // Step 1 → create the centre record immediately
+      if (step === 0 && !centreId) {
+        const result = await createMinimalCentre({
+          name: name.trim(),
+          contact_email: contactEmail.trim().toLowerCase(),
+          address: address.trim(),
+          area: area.trim(),
+          nearest_mrt: nearestMrt.trim(),
+          years_operating: yearsOperating ? parseInt(yearsOperating) : null,
+          image_urls: imageUrls,
+          trial_type: trialType,
+          paynow_qr_image_url: trialType === 'paid' ? paynowQrImageUrl : null,
+          trial_commission_rate: trialCommissionRate ? parseFloat(trialCommissionRate) : 0,
+          conversion_commission_rate: conversionCommissionRate ? parseFloat(conversionCommissionRate) : 0,
+        })
+        if ('error' in result) { setError(result.error); return }
+        setCentreId(result.centreId)
+        setStep((s) => s + 1)
+        return
+      }
+
+      // Step 1 already created — just advance (e.g. user went back to step 1)
+      if (step === 0 && centreId) {
+        setStep((s) => s + 1)
+        return
+      }
+
+      if (!centreId) { setError('Centre not created yet.'); return }
+
+      // Step 2: About & Teaching
+      if (step === 1) {
+        const result = await updateCentreStep(centreId, {
+          specialisation: specialisation.trim(),
+          student_types: Array.from(studentTypes),
+          teaching_approach: teachingApproach.trim(),
+          results: results.trim(),
+          class_size: classSize ? parseInt(classSize) : null,
+        })
+        if ('error' in result) { setError(result.error); return }
+        setStep((s) => s + 1)
+        return
+      }
+
+      // Step 3: Team
+      if (step === 2) {
+        const result = await updateCentreStep(centreId, { teachers })
+        if ('error' in result) { setError(result.error); return }
+        setStep((s) => s + 1)
+        return
+      }
+
+      // Step 4: Policies
+      if (step === 3) {
+        const result = await updateCentreStep(centreId, {
+          replacement_class_policy: replacementPolicy.trim(),
+          makeup_class_policy: makeupPolicy.trim(),
+          commitment_terms: commitmentTerms.trim(),
+          notice_period_terms: noticePeriod.trim(),
+          payment_terms: paymentTerms.trim(),
+          other_policies: otherPolicies.trim(),
+        })
+        if ('error' in result) { setError(result.error); return }
+        setStep((s) => s + 1)
+        return
+      }
+    } finally {
+      setStepSaving(false)
+    }
+  }
+
+  // Step 5: Final — add slots and redirect
+  function handleFinish() {
+    setError(null)
+    if (!centreId) { setError('Centre not created yet.'); return }
 
     const trialSlots: TrialSlotInput[] = importedSlots.map((s) => ({
       subject_id: s.subject_id,
@@ -190,34 +276,12 @@ export default function AddCentreForm({
     }))
 
     startTransition(async () => {
-      const result = await createCentre({
-        name: name.trim(),
-        contact_email: contactEmail.trim().toLowerCase(),
-        address: address.trim(),
-        area: area.trim(),
-        nearest_mrt: nearestMrt.trim(),
-        years_operating: yearsOperating ? parseInt(yearsOperating) : null,
-        specialisation: specialisation.trim(),
-        student_types: Array.from(studentTypes),
-        teaching_approach: teachingApproach.trim(),
-        results: results.trim(),
-        class_size: classSize ? parseInt(classSize) : null,
-        teachers,
-        replacement_class_policy: replacementPolicy.trim(),
-        makeup_class_policy: makeupPolicy.trim(),
-        commitment_terms: commitmentTerms.trim(),
-        notice_period_terms: noticePeriod.trim(),
-        payment_terms: paymentTerms.trim(),
-        other_policies: otherPolicies.trim(),
-        image_urls: imageUrls,
-        trial_type: trialType,
-        paynow_qr_image_url: trialType === 'paid' ? paynowQrImageUrl : null,
-        trial_commission_rate: trialCommissionRate ? parseFloat(trialCommissionRate) : 0,
-        conversion_commission_rate: conversionCommissionRate ? parseFloat(conversionCommissionRate) : 0,
-        trial_slots: trialSlots,
-      })
-      if (result?.error) {
+      const result = await addSlotsForCentre(centreId, trialSlots)
+      if ('error' in result) {
         setError(result.error)
+      } else {
+        // Redirect to admin centres list
+        window.location.href = '/admin/centres'
       }
     })
   }
@@ -770,7 +834,12 @@ export default function AddCentreForm({
               <SlotUploader
                 subjects={subjects}
                 levels={levels}
+                centreId={centreId ?? undefined}
                 onSlotsReady={handleSlotsImported}
+                parseScheduleFn={(text, weeks) => parseSchedule(text, centreId ?? undefined, weeks)}
+                parseScheduleImageFn={(b64, mt, weeks) => parseScheduleImage(b64, mt, centreId ?? undefined, weeks)}
+                createCustomSubjectFn={createCustomSubject}
+                saveCorrectionsFn={saveParseCorrections}
               />
             )}
           </div>
@@ -782,7 +851,7 @@ export default function AddCentreForm({
         <button
           type="button"
           onClick={() => setStep((s) => s - 1)}
-          disabled={step === 0}
+          disabled={step === 0 || stepSaving}
           className={`text-sm font-medium px-4 py-2.5 rounded-lg transition-colors ${
             step === 0
               ? 'text-gray-300 cursor-not-allowed'
@@ -796,32 +865,34 @@ export default function AddCentreForm({
           {step === STEPS.length - 1 && (
             <button
               type="button"
-              onClick={handleSubmit}
-              disabled={isPending || !hasValidSlots || !name.trim()}
+              onClick={handleFinish}
+              disabled={isPending || !hasValidSlots || !centreId}
               className={`text-sm font-medium px-6 py-2.5 rounded-lg transition-colors ${
                 isPending
                   ? 'bg-gray-300 text-gray-500 cursor-wait'
-                  : hasValidSlots && name.trim()
+                  : hasValidSlots && centreId
                   ? 'bg-gray-900 text-white hover:bg-gray-800'
                   : 'bg-gray-200 text-gray-400 cursor-not-allowed'
               }`}
             >
-              {isPending ? 'Creating...' : 'Create Centre'}
+              {isPending ? 'Saving slots...' : 'Finish & Add Slots'}
             </button>
           )}
 
           {step < STEPS.length - 1 && (
             <button
               type="button"
-              onClick={() => setStep((s) => s + 1)}
-              disabled={!canProceed()}
+              onClick={handleNext}
+              disabled={!canProceed() || stepSaving}
               className={`text-sm font-medium px-6 py-2.5 rounded-lg transition-colors ${
-                canProceed()
+                stepSaving
+                  ? 'bg-gray-300 text-gray-500 cursor-wait'
+                  : canProceed()
                   ? 'bg-gray-900 text-white hover:bg-gray-800'
                   : 'bg-gray-200 text-gray-400 cursor-not-allowed'
               }`}
             >
-              Next
+              {stepSaving ? 'Saving...' : step === 0 && !centreId ? 'Create & Continue' : 'Next'}
             </button>
           )}
         </div>

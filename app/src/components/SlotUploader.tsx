@@ -3,7 +3,7 @@
 import { useState, useRef } from 'react'
 import * as XLSX from 'xlsx'
 import type { AIParseResult } from '@/types/ai-parser'
-import { parseSchedule, parseScheduleImage, saveParseCorrections } from './actions'
+import type { CorrectionInput } from '@/lib/parse-corrections'
 import SlotClarificationTable from './SlotClarificationTable'
 
 interface Subject {
@@ -44,6 +44,10 @@ interface Props {
   levels: Level[]
   centreId?: string
   onSlotsReady: (slots: ParsedSlot[]) => void
+  parseScheduleFn: (rawText: string, weeksAhead?: number) => Promise<AIParseResult>
+  parseScheduleImageFn: (base64Data: string, mediaType: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp', weeksAhead?: number) => Promise<AIParseResult>
+  createCustomSubjectFn: (name: string) => Promise<{ id: string; name: string } | { error: string }>
+  saveCorrectionsFn?: (corrections: CorrectionInput[]) => Promise<void>
 }
 
 // ── Fallback rule-based parser (kept for when AI is unavailable) ──
@@ -199,7 +203,6 @@ function fileToBase64(file: File): Promise<string> {
     const reader = new FileReader()
     reader.onload = () => {
       const result = reader.result as string
-      // Strip the data:image/...;base64, prefix
       resolve(result.split(',')[1])
     }
     reader.onerror = reject
@@ -211,8 +214,8 @@ function fileToBase64(file: File): Promise<string> {
 
 type Phase = 'input' | 'parsing' | 'review'
 
-export default function SlotUploader({ subjects, levels, centreId, onSlotsReady }: Props) {
-  const [tab, setTab] = useState<'upload' | 'paste'>('upload')
+export default function SlotUploader({ subjects, levels, centreId, onSlotsReady, parseScheduleFn, parseScheduleImageFn, createCustomSubjectFn, saveCorrectionsFn }: Props) {
+  const [tab, setTab] = useState<'upload' | 'paste'>('paste')
   const [pasteText, setPasteText] = useState('')
   const [weeksAhead, setWeeksAhead] = useState(4)
   const [phase, setPhase] = useState<Phase>('input')
@@ -223,7 +226,7 @@ export default function SlotUploader({ subjects, levels, centreId, onSlotsReady 
   async function handleParseText(rawText: string) {
     setPhase('parsing')
     try {
-      const result = await parseSchedule(rawText, centreId, weeksAhead)
+      const result = await parseScheduleFn(rawText, weeksAhead)
 
       if (result.slots.length > 0) {
         setAiResult(result)
@@ -251,7 +254,7 @@ export default function SlotUploader({ subjects, levels, centreId, onSlotsReady 
     try {
       const base64 = await fileToBase64(file)
       const mediaType = file.type as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp'
-      const result = await parseScheduleImage(base64, mediaType, centreId, weeksAhead)
+      const result = await parseScheduleImageFn(base64, mediaType, weeksAhead)
 
       if (result.slots.length > 0) {
         setAiResult(result)
@@ -323,10 +326,8 @@ export default function SlotUploader({ subjects, levels, centreId, onSlotsReady 
 
   return (
     <div className="space-y-4">
-      {/* Input phase */}
       {phase === 'input' && (
         <>
-          {/* Tab switcher */}
           <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
             <button
               type="button"
@@ -441,7 +442,6 @@ export default function SlotUploader({ subjects, levels, centreId, onSlotsReady 
         </>
       )}
 
-      {/* Parsing phase — loading */}
       {phase === 'parsing' && (
         <div className="flex flex-col items-center justify-center py-12 space-y-3">
           <div className="w-6 h-6 border-2 border-gray-300 border-t-gray-900 rounded-full animate-spin" />
@@ -449,7 +449,6 @@ export default function SlotUploader({ subjects, levels, centreId, onSlotsReady 
         </div>
       )}
 
-      {/* Review phase — clarification table */}
       {phase === 'review' && aiResult && (
         <SlotClarificationTable
           result={aiResult}
@@ -458,7 +457,8 @@ export default function SlotUploader({ subjects, levels, centreId, onSlotsReady 
           centreId={centreId}
           onConfirm={onSlotsReady}
           onRestart={restart}
-          saveCorrectionsFn={saveParseCorrections}
+          createCustomSubjectFn={createCustomSubjectFn}
+          saveCorrectionsFn={saveCorrectionsFn}
         />
       )}
     </div>

@@ -183,89 +183,220 @@ All centre dashboard pages query with a `WHERE centre_id = ?` filter using the l
 ### Pipeline: How It Works (End-to-End)
 
 ```
-STEP 1: CENTRE UPLOADS
-Centre pastes or uploads their schedule (any format — CSV, copy from Excel, etc.)
-         │
-         ▼
-STEP 2: AI PARSING (server-side, Claude API)
-The raw text is sent to the Claude API along with:
-  - The AI template/prompt (see below)
-  - The list of existing subjects & levels from the DB (so it can match)
-         │
-         ▼
-STEP 3: AI RETURNS STRUCTURED DATA + CONFIDENCE
-Each row comes back as a ParsedSlot with every field marked:
-  ✅ confirmed  — exact match to DB record (auto-accepted)
-  🟡 inferred   — AI's best guess, not exact (shown for centre to confirm)
-  🔴 needs_review — AI cannot determine (centre MUST answer before import)
-         │
-         ▼
-STEP 4: CLARIFICATION UI (shown to the centre)
-A review screen displays the parsed schedule:
-  - ✅ Green rows: fully matched, ready to import
-  - 🟡 Amber fields: "Did you mean [X]?" with dropdown to confirm or correct
-  - 🔴 Red fields: "We couldn't determine [field]. Please select/enter:"
-    with input fields or dropdowns for the centre to fill in
-         │
-         ▼
-STEP 5: CENTRE CONFIRMS
-Centre reviews, answers all flagged questions, then clicks "Confirm Import"
-  - Only rows where ALL fields are ✅ or centre-approved get imported
-  - Unknown subjects → auto-created with is_custom: true
-  - Unknown levels → saved as custom_level text
-         │
-         ▼
-STEP 6: DATA SAVED
-Slots inserted into DB. Admin can later review/merge custom subjects.
+                         ╔═══════════════════════════════╗
+                         ║   CENTRE UPLOADS SCHEDULE     ║
+                         ║                               ║
+                         ║   Accepts: Excel (.xlsx/.xls) ║
+                         ║           CSV / text file     ║
+                         ║           Screenshot / photo  ║
+                         ║           Paste from clipboard║
+                         ║                               ║
+                         ║   + "Generate for __ weeks"   ║
+                         ╚══════════════╤════════════════╝
+                                        │
+                                        ▼
+                         ╔═══════════════════════════════╗
+                         ║   FORMAT DETECTION            ║
+                         ║   (client-side)               ║
+                         ║                               ║
+                         ║   .xlsx → SheetJS → CSV       ║
+                         ║          (all sheets merged)  ║
+                         ║   .csv  → read as text        ║
+                         ║   .png  → base64 for Vision   ║
+                         ╚══════════════╤════════════════╝
+                                        │
+              ┌─────────────────────────┼─────────────────────────┐
+              │                         │                         │
+              ▼                         ▼                         ▼
+   ┌──────────────────┐   ┌──────────────────┐   ┌──────────────────┐
+   │  subjects table   │   │  levels table     │   │ parse_corrections│
+   │  (60+ subjects    │   │  (P1-P6, Sec1-5, │   │ table            │
+   │   incl. MOE list) │   │   JC, IP, NA, NT)│   │ (learned from    │
+   │                   │   │                   │   │  past uploads)   │
+   └────────┬──────────┘   └────────┬──────────┘   └────────┬────────┘
+            │                       │                        │
+            └───────────┬───────────┘                        │
+                        │                                    │
+                        ▼                                    ▼
+                         ╔═══════════════════════════════╗
+                         ║   AI PARSING                  ║
+                         ║   (Claude Haiku API)          ║
+                         ║                               ║
+                         ║   Prompt includes:            ║
+                         ║   • DB subjects + levels      ║
+                         ║   • SEAB subject reference    ║
+                         ║   • Learned corrections       ║
+                         ║     (centre + global)         ║
+                         ║   • Date generation rules     ║
+                         ║     (SG timezone + weeks)     ║
+                         ║   • Edge case rules           ║
+                         ║   • Confidence rules          ║
+                         ║                               ║
+                         ║   Images → Claude Vision API  ║
+                         ║   Text   → Claude Messages    ║
+                         ║   Cost   → ~$0.02 per parse   ║
+                         ╚══════════════╤════════════════╝
+                                        │
+                                        ▼
+                         ╔═══════════════════════════════╗
+                         ║   AI RETURNS PER-FIELD        ║
+                         ║   CONFIDENCE                  ║
+                         ║                               ║
+                         ║   ✅ confirmed  — exact match  ║
+                         ║   🟡 inferred   — best guess   ║
+                         ║   🔴 needs_review — user must  ║
+                         ║                    answer      ║
+                         ║                               ║
+                         ║   + skipped_rows (non-class)  ║
+                         ║   + fallback if AI fails      ║
+                         ╚══════════════╤════════════════╝
+                                        │
+                                        ▼
+                         ╔═══════════════════════════════╗
+                         ║   CLARIFICATION TABLE         ║
+                         ║   (review screen)             ║
+                         ║                               ║
+                         ║   Bulk defaults:              ║
+                         ║   "Trial fee for all: [___]"  ║
+                         ║   "Max students: [___]"       ║
+                         ║                               ║
+                         ║   Per-row table:              ║
+                         ║   ☑ ✅ Math │ P4 │ Mar 16     ║
+                         ║   ☑ 🟡 [▼] │ S2 │ Mar 17     ║
+                         ║   ☑ 🔴 [▼] │ [_]│ [____]     ║
+                         ║   ☐ (excluded row)            ║
+                         ║                               ║
+                         ║   [Re-upload]  [Confirm (12)] ║
+                         ╚══════════════╤════════════════╝
+                                        │
+                                        ▼
+                         ╔═══════════════════════════════╗
+                         ║   CENTRE CONFIRMS             ║
+                         ║                               ║
+                         ║   1. Create new subjects      ║
+                         ║      (is_custom: true)        ║
+                         ║                               ║
+                         ║   2. Build final slot list    ║
+                         ║                               ║
+                         ║   3. ★ SELF-LEARNING:         ║
+                         ║      Compare AI vs user       ║
+                         ║      Save corrections to DB   ║
+                         ║      (fire-and-forget)        ║
+                         ╚══════════════╤════════════════╝
+                                        │
+                        ┌───────────────┤
+                        │               │
+                        ▼               ▼
+   ┌──────────────────────┐   ┌──────────────────────┐
+   │  trial_slots table    │   │  parse_corrections   │
+   │  (is_draft = true     │   │  table               │
+   │   for centre uploads) │   │                      │
+   │                       │   │  AI said "Power Math" │
+   │  Admin reviews →      │   │  User picked "Maths" │
+   │  approves → live      │   │  → centre_id tagged  │
+   └──────────────────────┘   │                      │
+                               │  Next upload: AI     │
+                               │  sees this and gets  │
+                               │  it right!           │
+                               └──────────────────────┘
+
+                    ╔═══════════════════════════════════╗
+                    ║       SELF-LEARNING LOOP          ║
+                    ║                                   ║
+                    ║  Upload 1: AI gets "Power Math"   ║
+                    ║            wrong → user corrects  ║
+                    ║                                   ║
+                    ║  Upload 2: AI prompt includes     ║
+                    ║            correction → gets it   ║
+                    ║            right!                 ║
+                    ║                                   ║
+                    ║  Centre-specific: only affects    ║
+                    ║  this centre's future uploads     ║
+                    ║                                   ║
+                    ║  Global: common corrections       ║
+                    ║  (e.g. "GP" → "General Paper")   ║
+                    ║  help ALL centres                 ║
+                    ╚═══════════════════════════════════╝
 ```
 
 ---
 
-### AI Template (Prompt sent to Claude API)
+### Edge Cases Handled by AI
 
-```
-You are a schedule parser for a tuition centre booking platform in Singapore.
-
-INPUT: Raw schedule data (CSV, pasted text, or messy format) from a tuition centre.
-
-EXISTING DATA IN OUR SYSTEM:
-- Subjects: [list of {id, name} from DB]
-- Levels: [list of {id, label, code} from DB]
-
-YOUR JOB: Parse each row into this structure:
-{
-  subject:      { value: string, match_id: string|null, confidence: "confirmed"|"inferred"|"needs_review" }
-  level:        { value: string, match_id: string|null, confidence: "confirmed"|"inferred"|"needs_review" }
-  date:         { value: "YYYY-MM-DD", confidence: "confirmed"|"needs_review" }
-  start_time:   { value: "HH:mm", confidence: "confirmed"|"needs_review" }
-  end_time:     { value: "HH:mm", confidence: "confirmed"|"needs_review" }
-  trial_fee:    { value: number, confidence: "confirmed"|"inferred"|"needs_review" }
-  max_students: { value: number, confidence: "confirmed"|"inferred"|"needs_review" }
-  notes:        { value: string }
-}
-
-CONFIDENCE RULES (STRICT — do not guess):
-- "confirmed": Exact match to an existing subject/level in our system, or unambiguous data
-- "inferred": Close match (e.g. "Maths" → "Mathematics", "P4" → "Primary 4") — flag for user to confirm
-- "needs_review": Cannot determine (missing column, ambiguous text, no match at all) — user must provide answer
-
-NEVER fill in a value you're not sure about. If a field is missing or ambiguous, set confidence to "needs_review" and leave value as the raw text or empty.
-```
+| Scenario | How AI Handles It |
+|----------|-------------------|
+| "Mon & Wed, 3-5pm" | Splits into 2 separate slots |
+| Day names only (no dates) | Generates next N weeks of dates (SG timezone) |
+| Grid/timetable (days as columns) | Detects and pivots to rows |
+| Merged cells (blank subject) | Inherits subject from row above |
+| Chinese characters (华文, 数学) | Maps to English subject names |
+| "Free" / "FOC" / "$0" | trial_fee = 0, confirmed |
+| Fees missing from schedule | All fees set to needs_review (admin sets bulk default) |
+| Student names mixed in | Filtered out as non-class data |
+| Multi-sheet Excel | All sheets concatenated with separators |
+| "Power Math" (branded name) | Learned correction → Mathematics |
 
 ---
 
-### Tasks
-- [ ] Build AI parser server action — Send raw CSV + existing subjects/levels to Claude API, return structured ParsedSlot[] with per-field confidence
-- [ ] Build clarification UI — Review screen with colour-coded confidence (green/amber/red), inline dropdowns and inputs for centre to resolve flagged fields
-- [ ] Auto-create pipeline — Unknown subjects get created with `is_custom: true`, unknown levels saved as `custom_level`
-- [ ] Fallback — If Claude API call fails, fall back to the existing rule-based parser with a warning message
+### Core Tasks (v1 — Done)
+- [x] Build AI parser server action (`app/src/lib/ai-parser.ts`) — Claude Haiku API, structured JSON output with per-field confidence
+- [x] Build clarification UI (`SlotClarificationTable.tsx`) — Colour-coded confidence, inline dropdowns/inputs, bulk defaults bar, exclude checkbox
+- [x] Auto-create pipeline — Unknown subjects created with `is_custom: true`, unknown levels saved as `custom_level`
+- [x] Fallback — If Claude API call fails, fall back to rule-based parser with a warning message
+- [x] Multi-format support — CSV, XLSX (via SheetJS), screenshot/image (via Claude Vision), text paste
 - [ ] Admin subject management page — View all subjects, merge custom → canonical, rename, hide
 
-### Files to create/modify
-- `supabase/migrations/` — Add `is_custom` boolean column to `subjects` table
-- `app/src/lib/ai-parser.ts` — New: Claude API integration with the template above
-- `app/src/app/admin/centres/new/SlotUploader.tsx` — Replace rule-based parser, add clarification UI
-- `app/src/app/admin/subjects/` — New admin page for subject management
+### Self-Learning + Improvements (v2 — In Progress)
+
+#### Database Changes
+- [x] Migration `20260314000000_add_moe_subjects.sql` — Add ~22 commonly-tutored MOE subjects (F&N, D&T, Computing, Higher Malay/Tamil, Literature variants, etc.)
+- [x] Migration `20260314000001_parse_corrections.sql` — New `parse_corrections` table for self-learning corrections
+
+#### AI Parser Rewrite
+- [x] `app/src/lib/ai-parser.ts` — Major rewrite: full SEAB subject reference, learned corrections injection, date generation from day names (Singapore timezone), edge case rules, enhanced aliases, max_tokens 8192
+- [x] `app/src/lib/parse-corrections.ts` — New helper: `fetchCorrections()` (centre-specific + global, deduplicated) + `saveCorrections()` (batch insert)
+
+#### Server Actions Wiring
+- [x] `app/src/app/admin/centres/new/actions.ts` — `parseSchedule()` / `parseScheduleImage()` now fetch corrections and pass to AI. Added `saveParseCorrections()`.
+- [x] `app/src/app/centre-dashboard/slots/actions.ts` — Same (centreId from auth)
+
+#### SlotUploader Updates
+- [x] Both SlotUploaders — "Weeks ahead" input (default 4, for day-name schedules), multi-sheet Excel concatenation, pass weeksAhead to parse calls
+- [x] Admin `SlotUploader.tsx` — centreId prop, saveCorrectionsFn passed to clarification table
+- [x] Generic `SlotUploader.tsx` — Same + updated function prop signatures
+
+#### SlotClarificationTable Correction Capture
+- [x] Both SlotClarificationTables — On confirm, compare AI vs user overrides. Changed subject/level/date/time fields saved to `parse_corrections` (fire-and-forget)
+
+#### Parent Component Wiring
+- [x] `AddCentreForm.tsx` — Pass centreId, bind centreId in parse wrappers, pass saveCorrectionsFn
+- [ ] `AddSlotSection.tsx` — Pass centreId + saveCorrectionsFn
+- [ ] `centre-dashboard/slots/page.tsx` — Pass centreId to AddSlotSection
+
+#### Verification
+- [ ] `cd app && npx tsc --noEmit` passes
+- [ ] Run both migrations against Supabase
+- [ ] Test: upload schedule with day names + weeks=2 → dates generated
+- [ ] Test: upload multi-sheet Excel → all sheets parsed
+- [ ] Test: make corrections → confirm → check `parse_corrections` has rows
+- [ ] Test: re-upload same format → AI uses learned corrections
+
+### Files
+| File | Purpose |
+|------|---------|
+| `supabase/migrations/20260314000000_add_moe_subjects.sql` | MOE subjects |
+| `supabase/migrations/20260314000001_parse_corrections.sql` | Corrections table |
+| `app/src/lib/ai-parser.ts` | AI parser (Claude Haiku + Vision) |
+| `app/src/lib/parse-corrections.ts` | Fetch/save corrections helper |
+| `app/src/app/admin/centres/new/actions.ts` | Admin parse actions |
+| `app/src/app/admin/centres/new/SlotUploader.tsx` | Admin slot uploader |
+| `app/src/app/admin/centres/new/SlotClarificationTable.tsx` | Admin clarification table |
+| `app/src/app/admin/centres/new/AddCentreForm.tsx` | Admin add centre form |
+| `app/src/app/centre-dashboard/slots/actions.ts` | Centre parse actions |
+| `app/src/app/centre-dashboard/slots/AddSlotSection.tsx` | Centre add slot section |
+| `app/src/app/centre-dashboard/slots/page.tsx` | Centre slots page |
+| `app/src/components/SlotUploader.tsx` | Shared slot uploader |
+| `app/src/components/SlotClarificationTable.tsx` | Shared clarification table |
 
 ---
 
@@ -466,6 +597,76 @@ All emails include booking reference code (PSE-YYMMDD-XXXX), warm early-adopter 
 - [x] Server action updated — `createCentre()` accepts `trial_type` and `paynow_qr_image_url`.
 - [x] TypeScript type updated — `Centre` interface includes `trial_type` and `paynow_qr_image_url`.
 
+### Checkpoint 9: Centre Onboarding Overhaul — Progressive Creation + Draft System
+
+**Goal**: Create the centre record at step 1 (name + email) so the centre gets a dashboard immediately. Save progressively per step. Let centres edit their own profile with admin approval before changes go live.
+
+**Key Design Decisions**:
+- `draft_data` JSONB column on centres — keys match column names, approval = spread into actual columns
+- Before going live (`is_active=false`): edits save directly, no draft friction
+- After going live (`is_active=true`): edits save to `draft_data` for admin review
+- `has_pending_changes` boolean flag for easy admin filtering
+- Trial slots proposed by centres use `is_draft=true`, not visible publicly until approved
+- Centre-editable fields: profile, location, policies, images, trial slots
+- Admin-only fields: name, slug, commission rates, trial_type, is_active, is_paused
+
+#### CP9-A: Schema Changes
+- [x] Migration `20260313000000_centre_onboarding_overhaul.sql` — Added `draft_data JSONB`, `has_pending_changes BOOLEAN`, `is_draft BOOLEAN` on trial_slots, changed `is_active` default to false
+- [x] TypeScript types updated — `Centre` has `draft_data`, `has_pending_changes`; `TrialSlot` has `is_draft`
+- [x] Public queries filtered — `getCentres()` and `getCentreBySlug()` exclude `is_draft=true` slots
+
+#### CP9-B: Progressive Admin Form
+- [x] New `createMinimalCentre(name, email, commissionRates, trialType, paynowQr)` server action — INSERTs centre (`is_active=false`) + centre_users (owner) + sends invite email → returns centreId
+- [x] New `updateCentreStep(centreId, stepData)` server action — UPDATEs centre with fields from steps 2-4
+- [x] New `addSlotsForCentre(centreId, slots[])` server action — INSERTs trial_slots + derives centre_subjects/levels
+- [x] Restructure `AddCentreForm.tsx` — Step 1 "Next" calls `createMinimalCentre()`, stores centreId. Steps 2-4 "Next" saves progressively. Step 5 "Finish" adds slots.
+- [x] Admin centres list — "Onboarding" badge for `is_active===false`. Link to continue setup.
+
+#### CP9-C: Centre Dashboard Editing
+- [x] New `centre-dashboard/centre-info/actions.ts` — server actions with draft logic (direct save if onboarding, draft_data if live)
+- [x] `ProfileForm.tsx` — description, teaching_style, track_record, class_size, years_operating
+- [x] `LocationForm.tsx` — address, area, nearest_mrt, parking_info
+- [x] `PoliciesForm.tsx` — all 6 policy fields
+- [x] `ImagesForm.tsx` — centre photos (up to 3) + PayNow QR
+- [x] Move image upload actions to `lib/image-actions.ts` (shared between admin + centre dashboard)
+- [x] Admin-only fields (name, slug, commission rates, trial_type) shown as read-only labels
+- [x] Centre sees "Changes saved" (onboarding) or "Submitted for review" (live)
+- [x] LinkedIn-style view/edit toggle — sections show read-only by default, pencil icon to edit, Save/Cancel buttons
+
+#### CP9-D: Centre Slot Management
+- [x] New `centre-dashboard/slots/actions.ts` — `addDraftSlots()`, `addSingleDraftSlot()`, `parseSchedule()`, `createCustomSubject()` — all INSERTs with `is_draft=true`
+- [x] New `AddSlotSection.tsx` — two tabs: Bulk Import (AI-powered paste/upload) + Add Single Slot (form with subject/level dropdowns, date, times, fee, capacity)
+- [x] Slots page — "Pending Review" section for `is_draft=true` slots (amber styling), existing Upcoming/Past sections filter `is_draft=false`
+- [x] Shared components — `SlotUploader` + `SlotClarificationTable` moved to `@/components/` with injectable action props, admin form updated to use shared components
+- [x] Migration `20260313100000_add_other_policies.sql` — added missing `other_policies` column to centres table
+
+#### CP9-E: Admin Review & Publish
+- [x] New `/admin/centres/review/` — list page with summary cards (Profile Changes, Draft Slots, Ready to Publish) + table of centres needing review
+- [x] New `/admin/centres/review/[id]/` — detail page with centre status, draft data diff table (Field/Current/Proposed), draft slots table, Approve/Reject buttons, Publish button
+- [x] `approveDraftData(centreId)` — spreads draft_data into actual columns, clears draft_data + has_pending_changes
+- [x] `rejectDraftData(centreId)` — clears draft_data + has_pending_changes
+- [x] `approveDraftSlots(centreId)` — sets `is_draft=false`, re-derives centre_subjects/levels/pairings from all live slots
+- [x] `rejectDraftSlots(centreId)` — deletes draft slots
+- [x] `publishCentre(centreId)` — sets `is_active=true`
+- [x] Admin nav — "Review" link with amber pending count badge, layout queries review count
+
+#### CP9-F: Admin Edit Page + Trusted Centre Auto-Update
+- [x] Migration `20260314100000_add_is_trusted.sql` — added `is_trusted` boolean to centres table
+- [x] New `/admin/centres/[id]/` — admin edit page with admin controls, profile, location, policies sections. All edits save directly (no draft for admin)
+- [x] Admin controls section — name, slug, email, trial type, commission rates (S$), status toggles: is_active, is_paused, is_trusted
+- [x] Pending draft changes section — diff table (Field/Current/Proposed) with inline Approve/Reject buttons
+- [x] Admin centres list — clickable centre names linking to edit page
+- [x] Trusted centre auto-update — `saveCentreFields()` checks `is_trusted`: when true, centre edits go live immediately (no draft)
+- [x] Trusted slot bypass — `addDraftSlots()` checks `is_trusted`: when true, slots insert as `is_draft=false` + re-derive subjects/levels
+
+#### Files to Create/Modify
+**CP9-A:** `supabase/migrations/20260313000000_centre_onboarding_overhaul.sql`, `app/src/types/database.ts`, `app/src/lib/public-data.ts`
+**CP9-B:** `app/src/app/admin/centres/new/actions.ts`, `app/src/app/admin/centres/new/AddCentreForm.tsx`, `app/src/app/admin/centres/page.tsx`
+**CP9-C:** `app/src/app/centre-dashboard/centre-info/` (actions.ts, ProfileForm.tsx, LocationForm.tsx, PoliciesForm.tsx, ImagesForm.tsx, page.tsx), `app/src/lib/image-actions.ts`
+**CP9-D:** `app/src/app/centre-dashboard/slots/` (actions.ts, AddSlotForm.tsx, page.tsx)
+**CP9-E:** `app/src/app/admin/centres/review/` (page.tsx, [id]/page.tsx, [id]/actions.ts), `app/src/app/admin/AdminNav.tsx`
+**CP9-F:** `app/src/app/admin/centres/[id]/` (page.tsx, actions.ts), `app/src/app/admin/centres/page.tsx`
+
 ### Future Items (Not Current Build)
 
 **Payment in booking form (build when ready):**
@@ -527,3 +728,77 @@ All emails include booking reference code (PSE-YYMMDD-XXXX), warm early-adopter 
 - **CP6:** Submit review → pending_approval. Admin approves → shows on centre profile.
 - **CP7:** All 9 emails built. Booking → parent + centre. Parent cancels/reschedules → centre. Centre cancels → parent. Attended → parent. No-show → admin. Enrolled → admin. Dispute → admin. All emails contain booking ref + CTAs.
 - **CP8:** Add Centre form: select Free/Paid trial type. If Paid → QR upload works. QR stored in Supabase Storage.
+- **CP9-A:** Migration runs clean. TypeScript compiles. Public listing excludes draft slots.
+- **CP9-B:** Admin enters name+email → centre record created after step 1. Each subsequent step saves to DB. Centre user invited immediately.
+- **CP9-C:** Centre logs in → edits profile/location/policies/images. If onboarding: saves directly. If live: saves to draft_data.
+- **CP9-D:** Centre adds a trial slot → created as draft. Does NOT appear on public listing. Shows as "Pending" on centre dashboard.
+- **CP9-E:** Admin sees review queue. Approves draft data → merged into live columns. Approves draft slots → become live. First publish → centre appears on public listing.
+- **CP9-F:** Admin clicks centre name → edit page. Can change any field directly. Can approve/reject inline drafts.
+
+---
+
+## 8. Trial vs Regular Class Info (Pricing & Duration)
+
+**Problem**: Some centres offer 1hr trial classes for subjects that normally run 2hrs. Trial fees differ from regular monthly fees. Parents need to see both to make informed decisions.
+
+**Approach**: Free-text field for MVP. Let centres describe their pricing however they want. Structure it later when patterns emerge.
+
+### Tasks
+- [ ] Migration: add `pricing_info TEXT` to centres table
+- [ ] TypeScript type: add `pricing_info` to Centre interface
+- [ ] Centre dashboard: add Pricing field to centre-info forms (LinkedIn-style view/edit)
+- [ ] Admin edit page: add pricing_info to profile section
+- [ ] Add Centre form: add pricing_info textarea in Step 2 (About). Placeholder: "e.g. Trial: 1hr, S$10 | Regular classes: 2hrs, S$280/month"
+- [ ] Public centre detail page: show pricing info section (between About and Available Trials)
+
+---
+
+## 9. Auto-Scrape Centre Website for Onboarding
+
+**Problem**: Onboarding friction. Centres have to manually type their description, teaching style, policies, address, etc. Most of this info already exists on their website.
+
+**Approach**: Admin pastes centre's website URL during onboarding Step 1. After centre record is created, AI scrapes the site and pre-fills Steps 2-4. Admin reviews and tweaks before saving.
+
+**Key constraint**: AI prompt enforces our field schema. Output maps to exact column names. This guarantees uniform data regardless of source website quality — parents can always compare apples-to-apples.
+
+### Tasks
+- [ ] Migration: add `website_url TEXT` to centres table
+- [ ] TypeScript type: add `website_url` to Centre interface
+- [ ] Add Centre form Step 1: optional "Centre Website" URL input
+- [ ] Server action: `scrapeWebsite(url)` — fetch HTML server-side, pass to Claude API with structured extraction prompt
+- [ ] Claude prompt: extract JSON matching our fields (`description`, `teaching_style`, `track_record`, `address`, `area`, `nearest_mrt`, `class_size`, `years_operating`, `pricing_info`, policies, etc.)
+- [ ] Add Centre form: after Step 1 completes, if URL provided → call scrape → pre-fill Steps 2-4 with returned values
+- [ ] Error handling: timeout, invalid URL, scrape fails → show warning, continue with empty form
+- [ ] Admin edit page: show website_url as clickable link
+
+---
+
+## 10. Multi-Branch Centres
+
+**Problem**: A centre brand (e.g. "The Learning Lab") might have 4 branches across Singapore. Currently each centre = one location. No way to group branches under one brand. Centre manager can't monitor all branches from one dashboard. Teachers overlap. Shared policies would be duplicated and hard to keep in sync.
+
+**Approach**: Parent-child centre model. Each branch = its own centre record (so slots, bookings, teachers all work without refactoring). A `parent_centre_id` groups branches under one brand. Centre manager links to parent, gets access to all branches via a branch picker.
+
+### Schema
+- Migration: add `parent_centre_id UUID REFERENCES centres(id)` + `branch_name TEXT` to centres
+- Parent record = brand container: name, description, policies, teachers, commission rates. `is_active=false` (not listed directly)
+- Branch records = location entries: `parent_centre_id` set, own address/area/MRT/parking/slots. `is_active=true`. Displayed as "Brand Name — Branch Name"
+
+### Centre Auth
+- `centre_users.centre_id` links to the PARENT centre
+- `requireCentreUser()` returns `parentCentreId` + array of `branchCentreIds`
+- Dashboard queries filter by selected branch
+
+### Tasks
+- [ ] Migration: `parent_centre_id`, `branch_name` on centres
+- [ ] TypeScript type update
+- [ ] Modify `requireCentreUser()` to return parent + branch IDs
+- [ ] Centre dashboard: branch picker dropdown in nav
+- [ ] Centre dashboard: shared info (profile, policies) editable on parent → propagates to all branches
+- [ ] Centre dashboard: location-specific info (address, MRT) editable per branch
+- [ ] Centre dashboard: slots/bookings filtered by selected branch
+- [ ] Centre dashboard overview: aggregate stats across all branches or per-branch toggle
+- [ ] Admin: "Add Branch" flow on parent centre's edit page (creates child centre record, copies shared fields)
+- [ ] Admin centres list: show branch grouping (indent under parent or "4 branches" badge)
+- [ ] Public listing: each branch as own card showing "Brand Name — Branch Name"
+- [ ] Public detail page: "Also at: Clementi, Jurong East, Tampines" banner with links to sibling branches
