@@ -81,28 +81,54 @@ export default async function CentreProfilePage({
   return (
     <div className="bg-white">
       {/* ── Hero (full-width, ClassPass style) ── */}
-      <div className="relative h-52 sm:h-64 overflow-hidden">
-        {centre.hero_image_url ? (
-          <Image
-            src={centre.hero_image_url}
-            alt={centre.name}
-            fill
-            className="object-cover"
-            priority
-          />
-        ) : (
-          <div className={`h-full bg-gradient-to-br ${centreGradient(slug)}`} />
-        )}
-        <Link
-          href="/centres"
-          className="absolute top-4 left-4 w-10 h-10 rounded-full bg-white/90 backdrop-blur flex items-center justify-center text-forest hover:bg-white transition-colors shadow-sm z-10"
-          aria-label="Back to centres"
-        >
-          <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-            <path d="M12 15l-5-5 5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </Link>
-      </div>
+      {(centre.image_urls ?? []).length > 1 ? (
+        <div className="relative">
+          <div className="flex overflow-x-auto snap-x snap-mandatory scrollbar-hide">
+            {(centre.image_urls ?? []).map((url, i) => (
+              <div key={url} className="relative h-52 sm:h-64 w-full shrink-0 snap-center">
+                <Image src={url} alt={`${centre.name} photo ${i + 1}`} fill className="object-cover" priority={i === 0} />
+              </div>
+            ))}
+          </div>
+          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5 z-10">
+            {(centre.image_urls ?? []).map((url, i) => (
+              <span key={url} className={`w-2 h-2 rounded-full ${i === 0 ? 'bg-white' : 'bg-white/50'}`} />
+            ))}
+          </div>
+          <Link
+            href="/centres"
+            className="absolute top-4 left-4 w-10 h-10 rounded-full bg-white/90 backdrop-blur flex items-center justify-center text-forest hover:bg-white transition-colors shadow-sm z-10"
+            aria-label="Back to centres"
+          >
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+              <path d="M12 15l-5-5 5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </Link>
+        </div>
+      ) : (
+        <div className="relative h-52 sm:h-64 overflow-hidden">
+          {(centre.image_urls ?? [])[0] ? (
+            <Image
+              src={(centre.image_urls ?? [])[0]}
+              alt={centre.name}
+              fill
+              className="object-cover"
+              priority
+            />
+          ) : (
+            <div className={`h-full bg-gradient-to-br ${centreGradient(slug)}`} />
+          )}
+          <Link
+            href="/centres"
+            className="absolute top-4 left-4 w-10 h-10 rounded-full bg-white/90 backdrop-blur flex items-center justify-center text-forest hover:bg-white transition-colors shadow-sm z-10"
+            aria-label="Back to centres"
+          >
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+              <path d="M12 15l-5-5 5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </Link>
+        </div>
+      )}
 
       {/* ── Centre header (ClassPass pattern) ── */}
       <div className="px-6 py-5 border-b border-linen">
@@ -189,6 +215,53 @@ export default async function CentreProfilePage({
                 <p className="text-sm text-sage leading-relaxed">{centre.teaching_style}</p>
               </div>
             </div>
+          )}
+
+          {/* Reviews */}
+          {centre.reviews.length > 0 && (
+            <section className="px-6 py-6 border-b border-linen bg-white">
+              <div className="flex items-center justify-between mb-4">
+                <p className="text-xs font-display font-semibold text-sage uppercase tracking-widest">
+                  Parent Reviews
+                </p>
+                <span className="text-xs text-sage font-display">
+                  {centre.reviews.length} review{centre.reviews.length === 1 ? '' : 's'}
+                </span>
+              </div>
+              {/* Average rating */}
+              {(() => {
+                const avg = centre.reviews.reduce((s, r) => s + r.rating, 0) / centre.reviews.length
+                return (
+                  <div className="flex items-center gap-2 mb-4">
+                    <span className="text-amber-500 text-lg tracking-tight">
+                      {'★'.repeat(Math.round(avg))}{'☆'.repeat(5 - Math.round(avg))}
+                    </span>
+                    <span className="text-sm font-display font-bold text-forest">{avg.toFixed(1)}</span>
+                    <span className="text-xs text-sage">({centre.reviews.length})</span>
+                  </div>
+                )
+              })()}
+              <div className="space-y-3">
+                {centre.reviews.map((review) => (
+                  <div key={review.id} className="bg-paper border border-linen rounded-xl p-4">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-sm font-display font-semibold text-forest">
+                        {review.parent_name.split(' ')[0]}
+                      </span>
+                      <span className="text-amber-500 text-xs tracking-tight">
+                        {'★'.repeat(review.rating)}{'☆'.repeat(5 - review.rating)}
+                      </span>
+                    </div>
+                    {review.review_text && (
+                      <p className="text-sm text-sage leading-relaxed">{review.review_text}</p>
+                    )}
+                    <p className="text-xs text-sage/50 mt-2">
+                      {new Date(review.created_at).toLocaleDateString('en-SG', { month: 'short', year: 'numeric' })}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </section>
           )}
 
           {/* Teachers */}

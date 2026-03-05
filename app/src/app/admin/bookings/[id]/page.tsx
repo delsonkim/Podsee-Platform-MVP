@@ -11,7 +11,7 @@ async function getBooking(id: string) {
       .from('bookings')
       .select(`
         *,
-        centres(name, area, address),
+        centres(name, area, address, trial_commission_rate, conversion_commission_rate),
         trial_slots(date, start_time, end_time, trial_fee, subjects(name), levels(label))
       `)
       .eq('id', id)
@@ -19,6 +19,56 @@ async function getBooking(id: string) {
     return data
   } catch {
     return null
+  }
+}
+
+async function getRescheduledPair(booking: any) {
+  const supabase = createAdminClient()
+
+  // If this booking was rescheduled FROM another, fetch the old one
+  let rescheduledFrom = null
+  if (booking.rescheduled_from) {
+    const { data } = await supabase
+      .from('bookings')
+      .select('id, booking_ref, trial_slots(date, start_time, end_time, subjects(name), levels(label))')
+      .eq('id', booking.rescheduled_from)
+      .single()
+    rescheduledFrom = data
+  }
+
+  // If this booking was rescheduled TO a new one, fetch it
+  let rescheduledTo = null
+  if (booking.cancelled_by === 'reschedule') {
+    const { data } = await supabase
+      .from('bookings')
+      .select('id, booking_ref, trial_slots(date, start_time, end_time, subjects(name), levels(label))')
+      .eq('rescheduled_from', booking.id)
+      .single()
+    rescheduledTo = data
+  }
+
+  return { rescheduledFrom, rescheduledTo }
+}
+
+async function getCommissions(bookingId: string) {
+  const supabase = createAdminClient()
+  const { data: outcome } = await supabase
+    .from('trial_outcomes')
+    .select('id')
+    .eq('booking_id', bookingId)
+    .single()
+  if (!outcome) return { trial: null, conversion: null }
+
+  const { data: commissions } = await supabase
+    .from('commissions')
+    .select('commission_type, commission_amount')
+    .eq('trial_outcome_id', outcome.id)
+
+  const trial = commissions?.find((c: any) => c.commission_type === 'trial')
+  const conversion = commissions?.find((c: any) => c.commission_type === 'conversion')
+  return {
+    trial: trial ? Number(trial.commission_amount) : null,
+    conversion: conversion ? Number(conversion.commission_amount) : null,
   }
 }
 
@@ -51,6 +101,10 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
 
   const slot = (booking as any).trial_slots
   const centre = (booking as any).centres
+  const { rescheduledFrom, rescheduledTo } = await getRescheduledPair(booking)
+  const isRescheduled = booking.status === 'cancelled' && booking.cancelled_by === 'reschedule'
+  const showCommission = ['completed', 'converted'].includes(booking.status)
+  const commissions = showCommission ? await getCommissions(booking.id) : { trial: null, conversion: null }
 
   return (
     <div className="max-w-3xl space-y-6">
@@ -62,8 +116,10 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
           <p className="text-sm text-gray-500 mt-0.5">Submitted {formatDateTime(booking.created_at)}</p>
         </div>
         <div className="flex items-center gap-2">
-          <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${BOOKING_STATUS_COLOR[booking.status as BookingStatus]}`}>
-            {BOOKING_STATUS_LABEL[booking.status as BookingStatus]}
+          <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
+            isRescheduled ? 'bg-blue-50 text-blue-600' : BOOKING_STATUS_COLOR[booking.status as BookingStatus]
+          }`}>
+            {isRescheduled ? 'Rescheduled' : BOOKING_STATUS_LABEL[booking.status as BookingStatus]}
           </span>
           {booking.is_flagged && (
             <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-700">⚑ Flagged</span>
@@ -72,7 +128,7 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
       </div>
 
       {/* Status actions */}
-      {['pending', 'confirmed'].includes(booking.status) && (
+      {booking.status === 'confirmed' && (
         <div className="bg-white rounded-lg border border-gray-200 p-4">
           <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Status Actions</p>
           <StatusActions bookingId={booking.id} status={booking.status as BookingStatus} />
@@ -112,6 +168,98 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
           <Row label="Fee (at booking)" value={`S$${Number(booking.trial_fee_at_booking).toFixed(2)}`} />
         </dl>
       </div>
+
+      {/* Cancellation info */}
+      {booking.status === 'cancelled' && (
+        <div className="bg-white rounded-lg border border-gray-200 p-4">
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Cancellation</p>
+          <dl>
+            <Row label="Cancelled by" value={
+              booking.cancelled_by === 'parent' ? 'Parent' :
+              booking.cancelled_by === 'centre' ? 'Centre' :
+              booking.cancelled_by === 'reschedule' ? 'Reschedule' :
+              booking.cancelled_by ?? '—'
+            } />
+            <Row label="Cancelled at" value={booking.cancelled_at ? formatDateTime(booking.cancelled_at) : null} />
+            {booking.cancel_reason && <Row label="Reason" value={booking.cancel_reason} />}
+          </dl>
+        </div>
+      )}
+
+      {/* Reschedule pair */}
+      {(rescheduledFrom || rescheduledTo) && (
+        <div className="bg-blue-50 rounded-lg border border-blue-200 p-4">
+          <p className="text-xs font-medium text-blue-600 uppercase tracking-wide mb-3">Reschedule History</p>
+          {rescheduledFrom && (() => {
+            const fromSlot = (rescheduledFrom as any).trial_slots
+            return (
+              <div className="flex items-center gap-3 text-sm">
+                <span className="text-gray-500">Rescheduled from:</span>
+                <Link href={`/admin/bookings/${(rescheduledFrom as any).id}`} className="text-blue-600 hover:underline font-mono text-xs">
+                  {(rescheduledFrom as any).booking_ref}
+                </Link>
+                {fromSlot && (
+                  <span className="text-gray-500 text-xs">
+                    ({formatDate(fromSlot.date)} {formatTime(fromSlot.start_time)} — {fromSlot.subjects?.name} {fromSlot.levels?.label})
+                  </span>
+                )}
+              </div>
+            )
+          })()}
+          {rescheduledTo && (() => {
+            const toSlot = (rescheduledTo as any).trial_slots
+            return (
+              <div className="flex items-center gap-3 text-sm mt-2">
+                <span className="text-gray-500">Rescheduled to:</span>
+                <Link href={`/admin/bookings/${(rescheduledTo as any).id}`} className="text-blue-600 hover:underline font-mono text-xs">
+                  {(rescheduledTo as any).booking_ref}
+                </Link>
+                {toSlot && (
+                  <span className="text-gray-500 text-xs">
+                    ({formatDate(toSlot.date)} {formatTime(toSlot.start_time)} — {toSlot.subjects?.name} {toSlot.levels?.label})
+                  </span>
+                )}
+              </div>
+            )
+          })()}
+        </div>
+      )}
+
+      {/* Commission (read-only — auto-created when rates are set) */}
+      {showCommission && (commissions.trial !== null || commissions.conversion !== null) && (
+        <div className="bg-white rounded-lg border border-gray-200 p-4">
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Commission</p>
+          <div className="space-y-2">
+            {commissions.trial !== null && (
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-500">Trial</span>
+                <span className="text-sm font-medium text-gray-900">S${commissions.trial.toFixed(2)}</span>
+              </div>
+            )}
+            {commissions.conversion !== null && (
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-500">Conversion</span>
+                <span className="text-sm font-medium text-gray-900">S${commissions.conversion.toFixed(2)}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Payment screenshot */}
+      {booking.payment_screenshot_url && (
+        <div className="bg-white rounded-lg border border-gray-200 p-4">
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Payment Screenshot</p>
+          <a href={booking.payment_screenshot_url} target="_blank" rel="noopener noreferrer">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={booking.payment_screenshot_url}
+              alt="Payment screenshot"
+              className="max-w-xs rounded-lg border border-gray-200 hover:opacity-80 transition-opacity"
+            />
+          </a>
+        </div>
+      )}
 
       {/* Flag */}
       <div className="bg-white rounded-lg border border-gray-200 p-4">

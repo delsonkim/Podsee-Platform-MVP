@@ -4,7 +4,7 @@ import { redirect } from 'next/navigation'
 import { randomBytes } from 'crypto'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
-import { sendBookingConfirmation } from '@/lib/email'
+import { sendBookingConfirmation, sendCentreNewBooking } from '@/lib/email'
 
 // Generates a readable booking ref: PSE-YYMMDD-XXXX (crypto-safe)
 function generateRef(): string {
@@ -22,6 +22,7 @@ export async function submitBooking(formData: FormData) {
   const parentEmail = formData.get('parent_email') as string
   const parentPhone = formData.get('parent_phone') as string
   const referralSource = formData.get('referral_source') as string
+  const paymentScreenshotUrl = formData.get('payment_screenshot_url') as string
 
   if (!slotId || !childName || !childLevel || !parentName || !parentEmail) {
     throw new Error('Missing required fields')
@@ -70,6 +71,22 @@ export async function submitBooking(formData: FormData) {
     throw new Error('Sorry, this slot is now full. Please choose another.')
   }
 
+  // Duplicate booking prevention — same parent + same slot + same child name = blocked
+  // Different child name on same slot is allowed (multi-child parents)
+  const { data: existingBooking } = await supabase
+    .from('bookings')
+    .select('id')
+    .eq('trial_slot_id', slotId)
+    .eq('parent_id', parent.id)
+    .ilike('child_name_at_booking', childName.trim())
+    .eq('status', 'confirmed')
+    .limit(1)
+    .maybeSingle()
+
+  if (existingBooking) {
+    throw new Error('You already have an active booking for this child on this slot.')
+  }
+
   // Atomic decrement — prevents overbooking under concurrent requests
   const { data: decremented, error: decError } = await supabase.rpc('decrement_spots', { slot_id: slotId })
   if (decError || decremented === 0) {
@@ -78,6 +95,7 @@ export async function submitBooking(formData: FormData) {
 
   // Insert booking with retry on ref collision (up to 3 attempts)
   let bookingRef = ''
+  let bookingId = ''
   let insertError = null
   for (let attempt = 0; attempt < 3; attempt++) {
     bookingRef = generateRef()
@@ -93,10 +111,12 @@ export async function submitBooking(formData: FormData) {
       child_level_at_booking: childLevel,
       trial_fee_at_booking: slot.trial_fee,
       referral_source: referralSource || null,
-      status: 'pending',
-    })
+      payment_screenshot_url: paymentScreenshotUrl || null,
+      status: 'confirmed',
+      acknowledged_at: new Date().toISOString(),
+    }).select('id').single()
     insertError = result.error
-    if (!insertError) break
+    if (!insertError) { bookingId = result.data?.id; break }
     // If it's not a unique constraint violation, don't retry
     if (!insertError.message?.includes('unique') && !insertError.code?.includes('23505')) break
   }
@@ -110,7 +130,7 @@ export async function submitBooking(formData: FormData) {
   // Send confirmation email (fire-and-forget — don't block the redirect)
   const { data: fullSlot } = await supabase
     .from('trial_slots')
-    .select('date, start_time, end_time, subjects(name), centres(name, slug, address, nearest_mrt)')
+    .select('date, start_time, end_time, subjects(name), centres(name, slug, address, nearest_mrt, contact_email)')
     .eq('id', slotId)
     .single()
 
@@ -132,6 +152,11 @@ export async function submitBooking(formData: FormData) {
       endTime: s.end_time,
       trialFee: Number(slot.trial_fee),
     }).catch(() => {}) // swallow — email failure shouldn't break booking
+
+    // E1: Notify the centre about the new booking
+    if (bookingId) {
+      sendCentreNewBooking(supabase, bookingId).catch(() => {})
+    }
   }
 
   redirect(`/book/success?ref=${bookingRef}`)

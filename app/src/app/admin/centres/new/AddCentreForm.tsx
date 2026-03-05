@@ -2,7 +2,7 @@
 
 import { useRef, useState, useTransition } from 'react'
 import { createCentre, type TeacherInput, type TrialSlotInput } from './actions'
-import { uploadCentreImage } from './image-actions'
+import { uploadCentreImage, uploadPaynowQr } from './image-actions'
 import SlotUploader, { type ParsedSlot } from './SlotUploader'
 
 interface Subject {
@@ -56,8 +56,8 @@ export default function AddCentreForm({
   const [isPending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
 
-  // Hero image
-  const [heroImageUrl, setHeroImageUrl] = useState<string | null>(null)
+  // Centre images (up to 3)
+  const [imageUrls, setImageUrls] = useState<string[]>([])
   const [imageUploading, setImageUploading] = useState(false)
   const imageInputRef = useRef<HTMLInputElement>(null)
 
@@ -68,6 +68,12 @@ export default function AddCentreForm({
   const [area, setArea] = useState('')
   const [nearestMrt, setNearestMrt] = useState('')
   const [yearsOperating, setYearsOperating] = useState('')
+  const [trialCommissionRate, setTrialCommissionRate] = useState('')
+  const [conversionCommissionRate, setConversionCommissionRate] = useState('')
+  const [trialType, setTrialType] = useState<'free' | 'paid'>('free')
+  const [paynowQrImageUrl, setPaynowQrImageUrl] = useState<string | null>(null)
+  const [qrUploading, setQrUploading] = useState(false)
+  const qrInputRef = useRef<HTMLInputElement>(null)
 
   // Step 2: About
   const [specialisation, setSpecialisation] = useState('')
@@ -130,7 +136,25 @@ export default function AddCentreForm({
     fd.append('file', file)
     const result = await uploadCentreImage(fd)
     setImageUploading(false)
-    if ('url' in result) setHeroImageUrl(result.url)
+    if ('url' in result) setImageUrls((prev) => [...prev, result.url])
+    else setError(result.error)
+    if (imageInputRef.current) imageInputRef.current.value = ''
+  }
+
+  function removeImage(index: number) {
+    setImageUrls((prev) => prev.filter((_, i) => i !== index))
+  }
+
+  async function handleQrSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setQrUploading(true)
+    setError(null)
+    const fd = new FormData()
+    fd.append('file', file)
+    const result = await uploadPaynowQr(fd)
+    setQrUploading(false)
+    if ('url' in result) setPaynowQrImageUrl(result.url)
     else setError(result.error)
   }
 
@@ -185,7 +209,11 @@ export default function AddCentreForm({
         notice_period_terms: noticePeriod.trim(),
         payment_terms: paymentTerms.trim(),
         other_policies: otherPolicies.trim(),
-        hero_image_url: heroImageUrl,
+        image_urls: imageUrls,
+        trial_type: trialType,
+        paynow_qr_image_url: trialType === 'paid' ? paynowQrImageUrl : null,
+        trial_commission_rate: trialCommissionRate ? parseFloat(trialCommissionRate) : 0,
+        conversion_commission_rate: conversionCommissionRate ? parseFloat(conversionCommissionRate) : 0,
         trial_slots: trialSlots,
       })
       if (result?.error) {
@@ -257,40 +285,43 @@ export default function AddCentreForm({
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400"
                 />
               </div>
-              {/* Hero image upload */}
+              {/* Centre images (up to 3) */}
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Centre Photo <span className="text-gray-400 font-normal">(optional)</span>
+                  Centre Photos <span className="text-gray-400 font-normal">(optional, up to 3)</span>
                 </label>
                 <p className="text-xs text-gray-400 mb-2">
-                  Landscape photo (16:9). Max 10MB. Shows as the hero image on the centre page.
+                  Landscape photos (16:9). Max 7MB each. First photo is the main hero image.
                 </p>
-                {heroImageUrl ? (
-                  <div className="relative rounded-lg overflow-hidden border border-gray-200">
-                    <img
-                      src={heroImageUrl}
-                      alt="Centre hero"
-                      className="w-full h-40 object-cover"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setHeroImageUrl(null)
-                        if (imageInputRef.current) imageInputRef.current.value = ''
-                      }}
-                      className="absolute top-2 right-2 bg-white/90 backdrop-blur text-gray-600 hover:text-red-600 rounded-full w-7 h-7 flex items-center justify-center text-sm shadow-sm"
-                    >
-                      &times;
-                    </button>
+                {imageUrls.length > 0 && (
+                  <div className="grid grid-cols-3 gap-3 mb-3">
+                    {imageUrls.map((url, i) => (
+                      <div key={url} className="relative rounded-lg overflow-hidden border border-gray-200">
+                        <img src={url} alt={`Centre photo ${i + 1}`} className="w-full h-28 object-cover" />
+                        {i === 0 && (
+                          <span className="absolute top-1.5 left-1.5 bg-gray-900/70 text-white text-[10px] font-medium px-1.5 py-0.5 rounded">
+                            Main
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => removeImage(i)}
+                          className="absolute top-1.5 right-1.5 bg-white/90 backdrop-blur text-gray-600 hover:text-red-600 rounded-full w-6 h-6 flex items-center justify-center text-xs shadow-sm"
+                        >
+                          &times;
+                        </button>
+                      </div>
+                    ))}
                   </div>
-                ) : (
+                )}
+                {imageUrls.length < 3 && (
                   <button
                     type="button"
                     onClick={() => imageInputRef.current?.click()}
                     disabled={imageUploading}
-                    className="w-full border-2 border-dashed border-gray-200 rounded-lg py-8 text-sm text-gray-500 hover:text-gray-700 hover:border-gray-300 transition-colors disabled:opacity-50"
+                    className="w-full border-2 border-dashed border-gray-200 rounded-lg py-6 text-sm text-gray-500 hover:text-gray-700 hover:border-gray-300 transition-colors disabled:opacity-50"
                   >
-                    {imageUploading ? 'Uploading...' : 'Click to upload a photo'}
+                    {imageUploading ? 'Uploading...' : `Click to upload${imageUrls.length > 0 ? ' another photo' : ' a photo'}`}
                   </button>
                 )}
                 <input
@@ -358,6 +389,109 @@ export default function AddCentreForm({
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400"
                 />
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Trial Commission (S$)</label>
+                <p className="text-xs text-gray-400 mb-1">Charged per completed trial</p>
+                <input
+                  type="number"
+                  value={trialCommissionRate}
+                  onChange={(e) => setTrialCommissionRate(e.target.value)}
+                  placeholder="0.00"
+                  min="0"
+                  step="0.01"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Conversion Commission (S$)</label>
+                <p className="text-xs text-gray-400 mb-1">Charged per student enrollment</p>
+                <input
+                  type="number"
+                  value={conversionCommissionRate}
+                  onChange={(e) => setConversionCommissionRate(e.target.value)}
+                  placeholder="0.00"
+                  min="0"
+                  step="0.01"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400"
+                />
+              </div>
+
+              {/* Trial Type */}
+              <div className="md:col-span-2 border-t border-gray-100 pt-5 mt-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Trial Type</label>
+                <p className="text-xs text-gray-400 mb-3">Does this centre charge a fee for trial classes?</p>
+                <div className="flex gap-4">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="trial_type"
+                      value="free"
+                      checked={trialType === 'free'}
+                      onChange={() => { setTrialType('free'); setPaynowQrImageUrl(null) }}
+                      className="w-4 h-4 border-gray-300"
+                    />
+                    <span className="text-sm text-gray-700">Free trial</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="trial_type"
+                      value="paid"
+                      checked={trialType === 'paid'}
+                      onChange={() => setTrialType('paid')}
+                      className="w-4 h-4 border-gray-300"
+                    />
+                    <span className="text-sm text-gray-700">Paid trial</span>
+                  </label>
+                </div>
+              </div>
+
+              {/* PayNow QR upload — only when paid */}
+              {trialType === 'paid' && (
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    PayNow QR Code Screenshot
+                  </label>
+                  <p className="text-xs text-gray-400 mb-2">
+                    Upload a screenshot of the centre&apos;s PayNow QR code. Parents will see this when booking a paid trial.
+                  </p>
+                  {paynowQrImageUrl ? (
+                    <div className="relative inline-block rounded-lg overflow-hidden border border-gray-200">
+                      <img
+                        src={paynowQrImageUrl}
+                        alt="PayNow QR"
+                        className="w-48 h-48 object-contain bg-white"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPaynowQrImageUrl(null)
+                          if (qrInputRef.current) qrInputRef.current.value = ''
+                        }}
+                        className="absolute top-2 right-2 bg-white/90 backdrop-blur text-gray-600 hover:text-red-600 rounded-full w-7 h-7 flex items-center justify-center text-sm shadow-sm"
+                      >
+                        &times;
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => qrInputRef.current?.click()}
+                      disabled={qrUploading}
+                      className="w-full border-2 border-dashed border-gray-200 rounded-lg py-8 text-sm text-gray-500 hover:text-gray-700 hover:border-gray-300 transition-colors disabled:opacity-50"
+                    >
+                      {qrUploading ? 'Uploading...' : 'Click to upload PayNow QR screenshot'}
+                    </button>
+                  )}
+                  <input
+                    ref={qrInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleQrSelect}
+                    className="hidden"
+                  />
+                </div>
+              )}
             </div>
           </div>
         )}

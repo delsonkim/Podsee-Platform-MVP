@@ -117,11 +117,12 @@ export default async function BookingPage({
               )}
             </div>
           </div>
+
         </div>
 
         {/* Right col — booking form */}
         <div className="mt-8 md:mt-0">
-          <BookingForm slot={slot} levels={levels} userProfile={userProfile} />
+          <BookingForm slot={slot} levels={levels} userProfile={userProfile} isPaidTrial={slot.centre.trial_type === 'paid'} paynowQrUrl={slot.centre.paynow_qr_image_url} />
         </div>
       </div>
     </div>

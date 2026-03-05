@@ -72,12 +72,7 @@ export default async function CentresPage() {
                 return (
                   <tr key={c.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3">
-                      <Link
-                        href={`/admin/centres/${c.id}`}
-                        className="font-medium text-gray-900 hover:text-blue-600"
-                      >
-                        {c.name}
-                      </Link>
+                      <span className="font-medium text-gray-900">{c.name}</span>
                       <p className="text-xs text-gray-400 mt-0.5">/{c.slug}</p>
                     </td>
                     <td className="px-4 py-3 text-gray-600">{c.area || '—'}</td>

@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { BOOKING_STATUS_COLOR, BOOKING_STATUS_LABEL, type BookingStatus } from '@/types/database'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import CentreBookingActions from './CentreBookingActions'
 
 function formatDate(d: string) {
   return new Date(d).toLocaleDateString('en-SG', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
@@ -126,6 +127,13 @@ export default async function CentreBookingDetailPage({
           </div>
         </div>
       </div>
+
+      {/* Centre actions */}
+      <CentreBookingActions
+        bookingId={booking.id}
+        status={booking.status}
+        trialDate={slot?.date ?? null}
+      />
     </div>
   )
 }

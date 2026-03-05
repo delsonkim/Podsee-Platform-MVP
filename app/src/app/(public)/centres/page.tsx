@@ -81,10 +81,10 @@ export default async function CentresPage({
             className="flex bg-white rounded-2xl border border-linen overflow-hidden hover:border-fern/40 hover:shadow-md transition-all group"
           >
             {/* Centre image (left side) */}
-            {centre.hero_image_url ? (
+            {centre.image_urls?.[0] ? (
               <div className="w-1/3 sm:w-2/5 shrink-0 relative min-h-[160px]">
                 <Image
-                  src={centre.hero_image_url}
+                  src={centre.image_urls[0]}
                   alt={centre.name}
                   fill
                   className="object-cover"

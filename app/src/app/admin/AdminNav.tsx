@@ -11,7 +11,7 @@ const links = [
   { href: '/admin/outcomes', label: 'Outcomes' },
   { href: '/admin/commissions', label: 'Commissions' },
   { href: '/admin/rewards', label: 'Rewards' },
-  { href: '/admin/centre-users', label: 'Centre Users' },
+  { href: '/admin/reviews', label: 'Reviews' },
   { href: '/admin/admin-users', label: 'Admin Users' },
   { href: '/admin/links', label: 'Links' },
 ]

@@ -1,3 +1,4 @@
+import React from 'react'
 import { createAdminClient } from '@/lib/supabase/admin'
 import Link from 'next/link'
 import { BOOKING_STATUS_COLOR, BOOKING_STATUS_LABEL, type BookingStatus } from '@/types/database'
@@ -24,7 +25,7 @@ async function getStats() {
         .eq('is_flagged', true),
       supabase
         .from('bookings')
-        .select('id, booking_ref, parent_name_at_booking, child_name_at_booking, child_level_at_booking, status, is_flagged, created_at, centres(name), trial_slots(date)')
+        .select('id, booking_ref, parent_name_at_booking, child_name_at_booking, child_level_at_booking, status, cancelled_by, rescheduled_from, is_flagged, created_at, centres(name), trial_slots(date)')
         .order('created_at', { ascending: false })
         .limit(10),
     ])
@@ -53,8 +54,54 @@ function formatDate(dateStr: string) {
   return new Date(dateStr).toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
+function DashboardBookingRow({ b, formatDate, isSubRow }: { b: any; formatDate: (d: string) => string; isSubRow?: boolean }) {
+  return (
+    <tr className={isSubRow ? 'bg-blue-50/40' : 'hover:bg-gray-50'}>
+      <td className="px-4 py-3">
+        <div className="flex items-center gap-1.5">
+          {isSubRow && <span className="text-blue-400 text-xs">↳</span>}
+          <Link href={`/admin/bookings/${b.id}`} className="text-blue-600 hover:underline font-mono text-xs">
+            {b.booking_ref}
+          </Link>
+        </div>
+      </td>
+      <td className="px-4 py-3 text-gray-700">{b.parent_name_at_booking}</td>
+      <td className="px-4 py-3 text-gray-700">
+        {b.child_name_at_booking}
+        <span className="ml-1 text-gray-400 text-xs">({b.child_level_at_booking})</span>
+      </td>
+      <td className="px-4 py-3 text-gray-700">{b.centres?.name ?? '—'}</td>
+      <td className="px-4 py-3 text-gray-500">{b.trial_slots?.date ? formatDate(b.trial_slots.date) : '—'}</td>
+      <td className="px-4 py-3">
+        {b.status === 'cancelled' && b.cancelled_by === 'reschedule' ? (
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-600">
+            Rescheduled
+          </span>
+        ) : (
+          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${BOOKING_STATUS_COLOR[b.status as BookingStatus]}`}>
+            {BOOKING_STATUS_LABEL[b.status as BookingStatus]}
+          </span>
+        )}
+        {b.is_flagged && <span className="ml-1 text-xs text-red-600 font-medium">⚑</span>}
+      </td>
+    </tr>
+  )
+}
+
 export default async function AdminDashboard() {
   const { statusCounts, flaggedCount, recentBookings } = await getStats()
+
+  // Group reschedule pairs for recent bookings
+  const byId = new Map(recentBookings.map((b: any) => [b.id, b]))
+  const rescheduledTo = new Map<string, any>()
+  const hiddenAsSubRow = new Set<string>()
+  for (const b of recentBookings as any[]) {
+    if (b.rescheduled_from && byId.has(b.rescheduled_from)) {
+      rescheduledTo.set(b.rescheduled_from, b)
+      hiddenAsSubRow.add(b.id)
+    }
+  }
+  const displayRecent = recentBookings.filter((b: any) => !hiddenAsSubRow.has(b.id))
 
   return (
     <div className="max-w-5xl space-y-8">
@@ -105,33 +152,22 @@ export default async function AdminDashboard() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {recentBookings.length === 0 && (
+              {displayRecent.length === 0 && (
                 <tr>
                   <td colSpan={6} className="px-4 py-8 text-center text-gray-400">No bookings yet.</td>
                 </tr>
               )}
-              {recentBookings.map((b: any) => (
-                <tr key={b.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3">
-                    <Link href={`/admin/bookings/${b.id}`} className="text-blue-600 hover:underline font-mono text-xs">
-                      {b.booking_ref}
-                    </Link>
-                  </td>
-                  <td className="px-4 py-3 text-gray-700">{b.parent_name_at_booking}</td>
-                  <td className="px-4 py-3 text-gray-700">
-                    {b.child_name_at_booking}
-                    <span className="ml-1 text-gray-400 text-xs">({b.child_level_at_booking})</span>
-                  </td>
-                  <td className="px-4 py-3 text-gray-700">{(b.centres as any)?.name ?? '—'}</td>
-                  <td className="px-4 py-3 text-gray-500">{(b.trial_slots as any)?.date ? formatDate((b.trial_slots as any).date) : '—'}</td>
-                  <td className="px-4 py-3">
-                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${BOOKING_STATUS_COLOR[b.status as BookingStatus]}`}>
-                      {BOOKING_STATUS_LABEL[b.status as BookingStatus]}
-                    </span>
-                    {b.is_flagged && <span className="ml-1 text-xs text-red-600 font-medium">⚑</span>}
-                  </td>
-                </tr>
-              ))}
+              {displayRecent.map((b: any) => {
+                const newBooking = rescheduledTo.get(b.id)
+                return (
+                  <React.Fragment key={b.id}>
+                    <DashboardBookingRow b={b} formatDate={formatDate} />
+                    {newBooking && (
+                      <DashboardBookingRow b={newBooking} formatDate={formatDate} isSubRow />
+                    )}
+                  </React.Fragment>
+                )
+              })}
             </tbody>
           </table>
         </div>

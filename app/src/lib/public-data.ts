@@ -29,11 +29,20 @@ export type Teacher = {
   sort_order: number
 }
 
+export type PublicReview = {
+  id: string
+  rating: number
+  review_text: string | null
+  created_at: string
+  parent_name: string
+}
+
 export type CentreDetail = Centre & {
   subjects: Subject[]
   levels: Level[]
   slots: SlotDetail[]
   teachers: Teacher[]
+  reviews: PublicReview[]
 }
 
 export async function getCentres(): Promise<CentreSummary[]> {
@@ -120,7 +129,24 @@ export async function getCentreBySlug(slug: string): Promise<CentreDetail | null
     const teachers: Teacher[] = ((d.teachers as any[]) ?? [])
       .sort((a: any, b: any) => (a.sort_order ?? 99) - (b.sort_order ?? 99))
 
-    return { ...centre, subjects, levels, slots, teachers }
+    // Fetch approved reviews for public display on centre profile
+    const { data: reviewData } = await supabase
+      .from('reviews')
+      .select('id, rating, review_text, created_at, parents(name)')
+      .eq('centre_id', centre.id)
+      .eq('status', 'approved')
+      .order('created_at', { ascending: false })
+      .limit(20)
+
+    const reviews: PublicReview[] = ((reviewData as any[]) ?? []).map((r: any) => ({
+      id: r.id,
+      rating: r.rating,
+      review_text: r.review_text,
+      created_at: r.created_at,
+      parent_name: r.parents?.name ?? 'Parent',
+    }))
+
+    return { ...centre, subjects, levels, slots, teachers, reviews }
   } catch {
     return null
   }

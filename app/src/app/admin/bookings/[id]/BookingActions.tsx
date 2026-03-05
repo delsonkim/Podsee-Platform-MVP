@@ -5,10 +5,7 @@ import { updateBookingStatus, flagBooking, unflagBooking, updateAdminNotes } fro
 import type { BookingStatus } from '@/types/database'
 
 const TRANSITIONS: Record<BookingStatus, { label: string; next: BookingStatus; style: string }[]> = {
-  pending: [
-    { label: 'Confirm', next: 'confirmed', style: 'bg-blue-600 text-white hover:bg-blue-700' },
-    { label: 'Cancel', next: 'cancelled', style: 'bg-gray-100 text-gray-700 hover:bg-gray-200' },
-  ],
+  pending: [],
   confirmed: [
     { label: 'Mark Completed', next: 'completed', style: 'bg-purple-600 text-white hover:bg-purple-700' },
     { label: 'No Show', next: 'no_show', style: 'bg-orange-100 text-orange-700 hover:bg-orange-200' },

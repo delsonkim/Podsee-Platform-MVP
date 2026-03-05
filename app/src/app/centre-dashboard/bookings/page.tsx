@@ -1,7 +1,7 @@
 import { requireCentreUser } from '@/lib/centre-auth'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { BOOKING_STATUS_COLOR, BOOKING_STATUS_LABEL, type BookingStatus } from '@/types/database'
 import Link from 'next/link'
+import InlineStatusActions from './InlineStatusActions'
 
 const TABS: { label: string; value: string }[] = [
   { label: 'All', value: 'all' },
@@ -123,9 +123,11 @@ export default async function CentreBookingsPage({
                 </td>
                 <td className="px-4 py-3 text-gray-700">S${Number(b.trial_fee_at_booking).toFixed(2)}</td>
                 <td className="px-4 py-3">
-                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${BOOKING_STATUS_COLOR[b.status as BookingStatus]}`}>
-                    {BOOKING_STATUS_LABEL[b.status as BookingStatus]}
-                  </span>
+                  <InlineStatusActions
+                    bookingId={b.id}
+                    status={b.status}
+                    trialDate={(b.trial_slots as any)?.date ?? null}
+                  />
                 </td>
                 <td className="px-4 py-3 text-gray-400 text-xs">{formatDate(b.created_at)}</td>
               </tr>

@@ -2,6 +2,8 @@ export type BookingStatus = 'pending' | 'confirmed' | 'completed' | 'converted' 
 export type ParentReportedEnrolment = 'enrolled' | 'not_enrolled'
 export type CommissionStatus = 'pending' | 'invoiced' | 'paid' | 'overdue' | 'waived'
 export type RewardStatus = 'pending' | 'approved' | 'paid' | 'rejected'
+export type CancelledBy = 'parent' | 'centre' | 'reschedule'
+export type ReviewStatus = 'pending_approval' | 'approved' | 'rejected'
 export type LevelGroup = 'primary' | 'secondary' | 'jc' | 'other'
 export type CentreUserRole = 'owner' | 'staff'
 export type AdminUserRole = 'admin' | 'superadmin'
@@ -63,7 +65,9 @@ export interface Centre {
   years_operating: number | null
   track_record: string | null
   contact_email: string | null
-  hero_image_url: string | null
+  image_urls: string[]
+  trial_type: 'free' | 'paid'
+  paynow_qr_image_url: string | null
   is_active: boolean
   is_paused: boolean
   created_at: string
@@ -122,9 +126,27 @@ export interface Booking {
   status: BookingStatus
   acknowledged_at: string | null
   referral_source: string | null
+  cancelled_by: CancelledBy | null
+  cancelled_at: string | null
+  cancel_reason: string | null
+  rescheduled_from: string | null
+  payment_screenshot_url: string | null
   is_flagged: boolean
   flag_reason: string | null
   admin_notes: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface Review {
+  id: string
+  booking_id: string
+  parent_id: string
+  centre_id: string
+  rating: number
+  review_text: string | null
+  status: ReviewStatus
+  approved_at: string | null
   created_at: string
   updated_at: string
 }

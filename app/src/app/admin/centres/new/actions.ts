@@ -67,8 +67,16 @@ export async function createCentre(formPayload: {
   payment_terms: string
   other_policies: string
 
-  // Hero image (optional)
-  hero_image_url: string | null
+  // Centre images (up to 3, optional)
+  image_urls: string[]
+
+  // Trial type + PayNow QR
+  trial_type: 'free' | 'paid'
+  paynow_qr_image_url: string | null
+
+  // Commission rates
+  trial_commission_rate: number
+  conversion_commission_rate: number
 
   // Step 5: Trial Slots (required)
   trial_slots: TrialSlotInput[]
@@ -121,7 +129,11 @@ export async function createCentre(formPayload: {
       notice_period_terms: formPayload.notice_period_terms || null,
       payment_terms: formPayload.payment_terms || null,
       other_policies: formPayload.other_policies || null,
-      hero_image_url: formPayload.hero_image_url,
+      image_urls: formPayload.image_urls,
+      trial_type: formPayload.trial_type,
+      paynow_qr_image_url: formPayload.paynow_qr_image_url,
+      trial_commission_rate: formPayload.trial_commission_rate,
+      conversion_commission_rate: formPayload.conversion_commission_rate,
       is_active: true,
       is_paused: false,
     })
@@ -150,63 +162,91 @@ export async function createCentre(formPayload: {
     }).catch(() => {})
   }
 
-  // 4. Insert teachers
-  for (const teacher of formPayload.teachers) {
-    if (!teacher.name) continue
-
-    await supabase
+  // 4. Insert teachers (batch) and link to subjects/levels
+  const validTeachers = formPayload.teachers.filter((t) => t.name)
+  if (validTeachers.length > 0) {
+    const { data: insertedTeachers } = await supabase
       .from('teachers')
-      .insert({
-        centre_id: centreId,
-        name: teacher.name,
-        role: teacher.role || null,
-        is_founder: teacher.is_founder,
-        qualifications: teacher.qualifications || null,
-        bio: teacher.bio || null,
-        years_experience: teacher.years_experience,
-        sort_order: teacher.is_founder ? 0 : 1,
+      .insert(
+        validTeachers.map((teacher) => ({
+          centre_id: centreId,
+          name: teacher.name,
+          role: teacher.role || null,
+          is_founder: teacher.is_founder,
+          qualifications: teacher.qualifications || null,
+          bio: teacher.bio || null,
+          years_experience: teacher.years_experience,
+          sort_order: teacher.is_founder ? 0 : 1,
+        }))
+      )
+      .select('id')
+
+    // Link teachers to their subjects and levels
+    if (insertedTeachers) {
+      const teacherSubjectRows: { teacher_id: string; subject_id: string }[] = []
+      const teacherLevelRows: { teacher_id: string; level_id: string }[] = []
+
+      insertedTeachers.forEach((row, i) => {
+        const input = validTeachers[i]
+        for (const sid of input.subject_ids) {
+          teacherSubjectRows.push({ teacher_id: row.id, subject_id: sid })
+        }
+        for (const lid of input.level_ids) {
+          teacherLevelRows.push({ teacher_id: row.id, level_id: lid })
+        }
       })
+
+      if (teacherSubjectRows.length > 0) {
+        await supabase.from('teacher_subjects').insert(teacherSubjectRows)
+      }
+      if (teacherLevelRows.length > 0) {
+        await supabase.from('teacher_levels').insert(teacherLevelRows)
+      }
+    }
   }
 
-  // 5. Insert trial slots
-  for (const slot of formPayload.trial_slots) {
-    if (!slot.subject_id || !slot.date || !slot.start_time || !slot.end_time) continue
-
-    await supabase.from('trial_slots').insert({
-      centre_id: centreId,
-      subject_id: slot.subject_id,
-      level_id: slot.level_id,
-      age_min: slot.age_min,
-      age_max: slot.age_max,
-      custom_level: slot.custom_level,
-      date: slot.date,
-      start_time: slot.start_time,
-      end_time: slot.end_time,
-      trial_fee: slot.trial_fee,
-      max_students: slot.max_students,
-      spots_remaining: slot.max_students,
-      notes: slot.notes || null,
-    })
+  // 5. Insert trial slots (batch)
+  const validSlots = formPayload.trial_slots.filter(
+    (s) => s.subject_id && s.date && s.start_time && s.end_time
+  )
+  if (validSlots.length > 0) {
+    await supabase.from('trial_slots').insert(
+      validSlots.map((slot) => ({
+        centre_id: centreId,
+        subject_id: slot.subject_id,
+        level_id: slot.level_id,
+        age_min: slot.age_min,
+        age_max: slot.age_max,
+        custom_level: slot.custom_level,
+        date: slot.date,
+        start_time: slot.start_time,
+        end_time: slot.end_time,
+        trial_fee: slot.trial_fee,
+        max_students: slot.max_students,
+        spots_remaining: slot.max_students,
+        notes: slot.notes || null,
+      }))
+    )
   }
 
-  // 6. Derive centre_subjects from trial slots
-  // Map subject_id → display_name (from raw CSV text if different from canonical name)
+  // 6. Derive centre_subjects from trial slots (batch subject lookup)
+  const uniqueSubjectIds = [...new Set(
+    formPayload.trial_slots.map((s) => s.subject_id).filter(Boolean)
+  )] as string[]
+
+  const { data: subjectRows } = uniqueSubjectIds.length > 0
+    ? await supabase.from('subjects').select('id, name').in('id', uniqueSubjectIds)
+    : { data: [] }
+
+  const subjectNameMap = new Map((subjectRows ?? []).map((s) => [s.id, s.name]))
+
   const subjectDisplayNames = new Map<string, string | null>()
   for (const slot of formPayload.trial_slots) {
     if (!slot.subject_id) continue
     if (subjectDisplayNames.has(slot.subject_id)) continue
 
-    // Look up canonical name
-    const { data: subjectRow } = await supabase
-      .from('subjects')
-      .select('name')
-      .eq('id', slot.subject_id)
-      .single()
-
-    const canonical = subjectRow?.name ?? ''
+    const canonical = subjectNameMap.get(slot.subject_id) ?? ''
     const raw = slot.raw_subject_text.trim()
-
-    // If the raw CSV text differs from the canonical name, use it as display_name
     const displayName =
       raw && raw.toLowerCase() !== canonical.toLowerCase() ? raw : null
 

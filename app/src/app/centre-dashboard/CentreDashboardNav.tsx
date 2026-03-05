@@ -7,6 +7,8 @@ const links = [
   { href: '/centre-dashboard', label: 'Overview' },
   { href: '/centre-dashboard/bookings', label: 'Bookings' },
   { href: '/centre-dashboard/slots', label: 'Trial Slots' },
+  { href: '/centre-dashboard/centre-info', label: 'Centre Info' },
+  { href: '/centre-dashboard/team', label: 'Team' },
 ]
 
 export default function CentreDashboardNav() {

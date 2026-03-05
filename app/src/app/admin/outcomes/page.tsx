@@ -8,8 +8,8 @@ async function getOutcomes() {
     const { data } = await supabase
       .from('trial_outcomes')
       .select(`
-        id, parent_reported_status, reported_at, admin_verified, admin_verified_at, admin_notes, created_at,
-        bookings(id, booking_ref, parent_name_at_booking, child_name_at_booking, child_level_at_booking, trial_fee_at_booking, centre_id, parent_id, centres(name))
+        id, parent_reported_status, reported_at, centre_reported_status, centre_reported_at, admin_verified, admin_verified_at, admin_notes, created_at,
+        bookings(id, booking_ref, parent_name_at_booking, child_name_at_booking, child_level_at_booking, trial_fee_at_booking, centre_id, parent_id, status, centres(name))
       `)
       .order('created_at', { ascending: false })
     return data ?? []
@@ -25,8 +25,10 @@ function formatDate(d: string) {
 export default async function OutcomesPage() {
   const outcomes = await getOutcomes()
 
-  const pending = outcomes.filter((o: any) => !o.admin_verified && o.parent_reported_status === 'enrolled')
-  const awaiting = outcomes.filter((o: any) => !o.admin_verified && o.parent_reported_status !== 'enrolled')
+  // Enrolled = centre or parent reported enrolled (not yet admin-verified)
+  const enrolled = outcomes.filter((o: any) => !o.admin_verified && (o.centre_reported_status === 'enrolled' || o.parent_reported_status === 'enrolled'))
+  // Awaiting = not enrolled by anyone, not verified
+  const awaiting = outcomes.filter((o: any) => !o.admin_verified && o.centre_reported_status !== 'enrolled' && o.parent_reported_status !== 'enrolled')
   const verified = outcomes.filter((o: any) => o.admin_verified)
 
   return (
@@ -34,18 +36,18 @@ export default async function OutcomesPage() {
       <div>
         <h1 className="text-2xl font-semibold text-gray-900">Trial Outcomes</h1>
         <p className="text-sm text-gray-500 mt-1">
-          Parent-reported enrolment results. Verify to trigger commission and reward.
+          Enrolment outcomes reported by centres and parents.
         </p>
       </div>
 
-      {/* Needs verification */}
-      {pending.length > 0 && (
+      {/* Enrolled — needs verification */}
+      {enrolled.length > 0 && (
         <section>
           <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-3">
-            Awaiting Verification — Parent Reported Enrolled ({pending.length})
+            Reported Enrolled ({enrolled.length})
           </h2>
           <div className="space-y-3">
-            {pending.map((o: any) => (
+            {enrolled.map((o: any) => (
               <div key={o.id} className="bg-white border border-green-200 rounded-lg p-4 space-y-3">
                 <div className="flex items-start justify-between">
                   <div>
@@ -61,18 +63,15 @@ export default async function OutcomesPage() {
                     <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                       Enrolled ✓
                     </span>
-                    {o.reported_at && (
-                      <p className="text-xs text-gray-400 mt-1">Reported {formatDate(o.reported_at)}</p>
+                    {o.centre_reported_status === 'enrolled' && (
+                      <p className="text-xs text-gray-400 mt-1">Centre reported {formatDate(o.centre_reported_at)}</p>
+                    )}
+                    {o.parent_reported_status === 'enrolled' && o.reported_at && (
+                      <p className="text-xs text-gray-400 mt-1">Parent reported {formatDate(o.reported_at)}</p>
                     )}
                   </div>
                 </div>
-                <OutcomeVerifyForm
-                  outcomeId={o.id}
-                  bookingId={o.bookings?.id}
-                  centreId={o.bookings?.centre_id}
-                  parentId={o.bookings?.parent_id}
-                  trialFee={o.bookings?.trial_fee_at_booking}
-                />
+                <OutcomeVerifyForm outcomeId={o.id} />
               </div>
             ))}
           </div>
@@ -83,7 +82,7 @@ export default async function OutcomesPage() {
       {awaiting.length > 0 && (
         <section>
           <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-3">
-            Awaiting Parent Report ({awaiting.length})
+            Awaiting Report ({awaiting.length})
           </h2>
           <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
             <table className="w-full text-sm">

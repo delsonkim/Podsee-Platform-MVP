@@ -28,7 +28,6 @@ const sections = [
       { label: 'Admin Dashboard', path: '/admin' },
       { label: 'Add New Centre', path: '/admin/centres/new' },
       { label: 'Manage Subjects', path: '/admin/subjects' },
-      { label: 'Manage Centre Users', path: '/admin/centre-users' },
       { label: 'Manage Admin Users', path: '/admin/admin-users' },
     ],
   },

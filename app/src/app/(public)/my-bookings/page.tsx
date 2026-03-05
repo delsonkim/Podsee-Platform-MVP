@@ -7,6 +7,8 @@ import {
   BOOKING_STATUS_COLOR,
   type BookingStatus,
 } from '@/types/database'
+import BookingActions from './BookingActions'
+import PostTrialActions from './PostTrialActions'
 
 function formatDate(d: string) {
   return new Date(d).toLocaleDateString('en-SG', {
@@ -26,7 +28,7 @@ function formatTime(t: string) {
 }
 
 /* Expected statuses that don't need a visible badge (reduces parent anxiety) */
-const QUIET_STATUSES: BookingStatus[] = ['pending', 'confirmed']
+const QUIET_STATUSES: BookingStatus[] = ['confirmed']
 
 export default async function MyBookingsPage() {
   const supabase = await createClient()
@@ -47,7 +49,9 @@ export default async function MyBookingsPage() {
       .from('bookings')
       .select(`
         *,
-        trial_slots(*, subjects(*), levels(*), centres(*))
+        trial_slots(*, subjects(*), levels(*), centres(*)),
+        trial_outcomes(centre_reported_at),
+        reviews(id)
       `)
       .eq('parent_id', parent.id)
       .order('created_at', { ascending: false })
@@ -58,9 +62,11 @@ export default async function MyBookingsPage() {
   const userName = user.user_metadata?.full_name ?? user.user_metadata?.name ?? 'there'
 
   // Split bookings into upcoming and past
+  // Completed/converted/no_show/cancelled are always "past" regardless of date
+  const PAST_STATUSES = ['completed', 'converted', 'no_show', 'cancelled']
   const today = new Date(new Date().toDateString())
-  const upcoming = bookings.filter((b: any) => b.trial_slots && new Date(b.trial_slots.date) >= today)
-  const past = bookings.filter((b: any) => !b.trial_slots || new Date(b.trial_slots.date) < today)
+  const upcoming = bookings.filter((b: any) => !PAST_STATUSES.includes(b.status) && b.trial_slots && new Date(b.trial_slots.date) >= today)
+  const past = bookings.filter((b: any) => PAST_STATUSES.includes(b.status) || !b.trial_slots || new Date(b.trial_slots.date) < today)
 
   return (
     <div className="max-w-3xl mx-auto px-6 py-10">
@@ -137,12 +143,16 @@ function BookingCard({ booking, variant }: { booking: any; variant: 'upcoming' |
   const subject = slot?.subjects
   const level = slot?.levels
   const status = booking.status as BookingStatus
+  const isRescheduled = status === 'cancelled' && booking.cancelled_by === 'reschedule'
+  const isDisputed = status === 'completed' && booking.is_flagged
   const showBadge = !QUIET_STATUSES.includes(status)
+  // Completed/converted are still relevant — keep them prominent like upcoming cards
+  const isActivePast = status === 'completed' || status === 'converted'
 
   return (
     <div
       className={`bg-white border rounded-2xl overflow-hidden transition-all ${
-        variant === 'upcoming'
+        variant === 'upcoming' || isActivePast
           ? 'border-linen border-l-4 border-l-fern'
           : 'border-linen opacity-60'
       }`}
@@ -174,8 +184,18 @@ function BookingCard({ booking, variant }: { booking: any; variant: 'upcoming' |
           </div>
           <div className="text-right shrink-0">
             {showBadge && (
-              <span className={`text-xs font-display font-bold px-2.5 py-1 rounded-full ${BOOKING_STATUS_COLOR[status]}`}>
-                {BOOKING_STATUS_LABEL[status]}
+              <span className={`text-xs font-display font-bold px-2.5 py-1 rounded-full ${
+                isRescheduled ? 'bg-blue-50 text-blue-600'
+                : isDisputed ? 'bg-amber-100 text-amber-800'
+                : status === 'completed' ? 'bg-purple-100 text-purple-800'
+                : status === 'converted' ? 'bg-green-100 text-green-800'
+                : BOOKING_STATUS_COLOR[status]
+              }`}>
+                {isRescheduled ? 'Rescheduled'
+                  : isDisputed ? 'Under Review'
+                  : status === 'completed' ? 'Trial Completed'
+                  : status === 'converted' ? 'Enrolled'
+                  : BOOKING_STATUS_LABEL[status]}
               </span>
             )}
             <p className="font-display font-bold text-forest mt-1">
@@ -212,8 +232,8 @@ function BookingCard({ booking, variant }: { booking: any; variant: 'upcoming' |
           <span>Level: <span className="text-forest font-medium">{booking.child_level_at_booking}</span></span>
         </div>
 
-        {/* Centre address for upcoming — in a sub-card */}
-        {variant === 'upcoming' && centre?.address && (
+        {/* Centre address for upcoming + active past bookings */}
+        {(variant === 'upcoming' || isActivePast) && centre?.address && (
           <div className="mt-3 bg-paper rounded-lg p-3">
             <p className="text-xs text-sage">
               <span className="font-semibold text-forest">Address:</span> {centre.address}
@@ -230,6 +250,29 @@ function BookingCard({ booking, variant }: { booking: any; variant: 'upcoming' |
         <p className="text-xs text-sage/50 mt-3 font-mono">
           Ref: {booking.booking_ref}
         </p>
+
+        {/* Cancel / Reschedule actions — only for confirmed upcoming bookings */}
+        {variant === 'upcoming' && status === 'confirmed' && centre && slot && (
+          <BookingActions
+            bookingId={booking.id}
+            centreId={centre.id}
+            slotId={slot.id}
+            subjectId={slot.subject_id}
+            levelId={slot.level_id}
+          />
+        )}
+
+        {/* Post-trial actions: dispute enrollment + leave review */}
+        {variant === 'past' && (status === 'completed' || status === 'converted') && centre && (
+          <PostTrialActions
+            bookingId={booking.id}
+            centreId={centre.id}
+            status={status}
+            centreReportedAt={booking.trial_outcomes?.centre_reported_at ?? null}
+            trialDate={slot?.date ?? null}
+            hasReview={!!booking.reviews}
+          />
+        )}
       </div>
     </div>
   )
