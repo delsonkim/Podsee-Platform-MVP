@@ -63,7 +63,7 @@ export default async function CentresPage({
       {/* Centre cards */}
       <div className="space-y-4">
         {filtered.length === 0 && (
-          <div className="bg-paper border border-linen rounded-2xl p-12 text-center">
+          <div className="bg-paper border border-linen rounded-2xl p-6 sm:p-12 text-center">
             <p className="text-sm text-sage mb-3">No centres match your filters.</p>
             <Link
               href="/centres"

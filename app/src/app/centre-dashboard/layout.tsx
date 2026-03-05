@@ -7,7 +7,7 @@ export default async function CentreDashboardLayout({ children }: { children: Re
 
   return (
     <div className="flex min-h-screen">
-      <aside className="w-56 shrink-0 bg-gray-900 flex flex-col">
+      <aside className="hidden md:flex w-56 shrink-0 bg-gray-900 flex-col">
         <div className="px-4 py-5 border-b border-white/10">
           <span className="text-white font-semibold text-sm tracking-wide">{centreName}</span>
           <p className="text-gray-500 text-xs mt-0.5">Centre Dashboard</p>
@@ -19,7 +19,7 @@ export default async function CentreDashboardLayout({ children }: { children: Re
         </div>
       </aside>
 
-      <main className="flex-1 overflow-auto p-8 bg-gray-50">{children}</main>
+      <main className="flex-1 overflow-auto p-4 sm:p-8 bg-gray-50">{children}</main>
     </div>
   )
 }

@@ -195,7 +195,7 @@ export default function BookingForm({
                 className="rounded-lg border border-amber-200"
               />
             ) : (
-              <div className="w-[180px] h-[180px] rounded-lg border-2 border-dashed border-amber-300 flex items-center justify-center">
+              <div className="w-40 h-40 sm:w-[180px] sm:h-[180px] rounded-lg border-2 border-dashed border-amber-300 flex items-center justify-center">
                 <p className="text-xs text-amber-600 text-center px-3">QR code pending — contact the centre for PayNow details</p>
               </div>
             )}
@@ -213,7 +213,7 @@ export default function BookingForm({
           {!screenshotUrl ? (
             <div
               onClick={() => fileInputRef.current?.click()}
-              className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${
+              className={`border-2 border-dashed rounded-xl p-4 sm:p-6 text-center cursor-pointer transition-colors ${
                 attempted && !screenshotUrl
                   ? 'border-red-300 bg-red-50'
                   : 'border-linen hover:border-fern/40 hover:bg-mint/30'

@@ -1,5 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import Link from 'next/link'
+import DeleteCentreButton from './DeleteCentreButton'
 
 export default async function CentreReviewListPage() {
   const supabase = createAdminClient()
@@ -45,7 +46,7 @@ export default async function CentreReviewListPage() {
       </div>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-white border border-gray-200 rounded-lg p-4">
           <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Profile Changes</p>
           <p className="text-2xl font-bold text-amber-600 mt-1">{pendingProfileCount}</p>
@@ -61,8 +62,8 @@ export default async function CentreReviewListPage() {
       </div>
 
       {/* Table */}
-      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-        <table className="w-full text-sm">
+      <div className="bg-white rounded-lg border border-gray-200 overflow-x-auto">
+        <table className="w-full text-sm min-w-[600px]">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Centre</th>
@@ -107,12 +108,15 @@ export default async function CentreReviewListPage() {
                   {new Date(c.created_at).toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' })}
                 </td>
                 <td className="px-4 py-3">
-                  <Link
-                    href={`/admin/centres/review/${c.id}`}
-                    className="text-sm text-blue-600 hover:text-blue-700 font-medium"
-                  >
-                    Review &rarr;
-                  </Link>
+                  <div className="flex items-center gap-3">
+                    <Link
+                      href={`/admin/centres/review/${c.id}`}
+                      className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+                    >
+                      Review &rarr;
+                    </Link>
+                    <DeleteCentreButton centreId={c.id} centreName={c.name} />
+                  </div>
                 </td>
               </tr>
             ))}

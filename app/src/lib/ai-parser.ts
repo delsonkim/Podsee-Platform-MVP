@@ -125,7 +125,8 @@ YOUR JOB:
 COLUMN MAPPING INTELLIGENCE:
 These are examples of how centres may name columns (case-insensitive, flexible matching):
 - Subject/Class/Programme/Course/Module → subject
-- Level/Grade/Year/Class/Stream → level
+- Level/Grade/Year/Class → level
+- Stream/Band/G-Level/Track/FSBB/Express/NA/NT → stream
 - Date/Day/Schedule Date → date
 - Start/Start Time/From/Time/Begin → start_time
 - End/End Time/To/Until/Finish → end_time
@@ -153,12 +154,39 @@ SUBJECT MATCHING:
 - Completely unknown subjects → check SEAB reference list above. If found there, set needs_review with a note. If not found at all, needs_review with match_id null.
 
 LEVEL MATCHING:
-- Singapore education system: Primary (P1-P6), Secondary (Sec 1-5), JC (JC1-2), IP (IP1-4), Normal Academic (NA1-4)
+- Singapore education system: Primary (P1-P6), Secondary (Sec 1-5), JC (JC1-2), IP (IP1-4)
 - "Pri 4", "Primary Four", "P4", "Year 4", "Yr 4" → Primary 4 (inferred)
 - "Sec 1", "Secondary 1", "S1", "Year 7" → Secondary 1 (inferred)
+- IMPORTANT: Normal Academic (NA1-4) codes in the levels DB are LEGACY. For secondary slots, prefer SEC1-5 for level and set stream to G1/G2/G3. Only use NA codes if the input clearly refers to old-stream-based classes with no G-level context.
 - Age ranges: "Ages 6-9", "6-9 years", "6-9yo" → extract age_min=6, age_max=9, level match_id null
 - Skill bands: "Beginner", "Intermediate", "Advanced" → match to BEG/INT/ADV codes
 - Custom text like "White Belt", "Grade 3-5 ABRSM" → needs_review with raw text preserved
+
+STREAM / FSBB SUBJECT-BASED BANDING (Singapore secondary schools):
+- Since 2024, Singapore uses Full Subject-Based Banding (FSBB). Each secondary ACADEMIC subject is taken at an individual G-level:
+  G1 = Foundational (old Normal Technical / N(T))
+  G2 = Standard (old Normal Academic / N(A))
+  G3 = Most Demanding (old Express)
+- G1/G2/G3 applies to ALL core academic subjects, NOT just Mathematics:
+  Core (G1, G2, G3): English, Mother Tongue, Mathematics, Science
+  Humanities (G2, G3 only): Geography, History, Literature (G1 takes Humanities Exposure Modules)
+  Upper Sec electives: Additional Mathematics (G2, G3 only), Elementary Mathematics (G1, G2, G3),
+    Pure Sciences like Physics/Chemistry/Biology (G2, G3), POA, Computing (G2, G3)
+  Common curriculum (NO G-level — mixed classes): Art, Music, PE, D&T, FCE, CCE
+- A student can be G3 Math, G2 English, G1 Science — banding is PER SUBJECT, not per student.
+- Common notations in centre schedules:
+  "Sec 2 G3 Math", "S2 G3" → level: Secondary 2, stream: "G3"
+  "Sec 1 G2 English", "Sec1 NA English" → level: Secondary 1, stream: "G2"
+  "Sec 3 G1 Math", "N(T) Math" → level: Secondary 3, stream: "G1"
+  "Sec 3 G3 A-Math" → level: Secondary 3, stream: "G3", subject: Additional Mathematics
+  "Express" / "Exp" → stream: "G3"
+  "Normal Academic" / "N(A)" / "NA" → stream: "G2"
+  "Normal Technical" / "N(T)" / "NT" → stream: "G1"
+  IP classes → stream: "IP" (keep level as IP1-IP4 if available)
+  IB classes → stream: "IB"
+- If NO stream/banding info is present, set stream to { "value": null, "confidence": "confirmed" }
+- Stream is ONLY relevant for secondary-level academic subjects. Primary, JC, enrichment, and music classes should have stream null.
+- If a centre uses old terms (Express/NA/NT), normalise to G1/G2/G3 with confidence "inferred".
 
 ${dateGenSection}
 
@@ -191,6 +219,7 @@ OUTPUT FORMAT — return ONLY this JSON, no markdown, no explanation:
     {
       "subject": { "value": "subject name", "match_id": "uuid or null", "confidence": "confirmed|inferred|needs_review", "raw_text": "original text" },
       "level": { "value": "level label or raw text", "match_id": "uuid or null", "confidence": "confirmed|inferred|needs_review", "raw_text": "original text" },
+      "stream": { "value": "G3 or G2 or G1 or IP or IB or null", "confidence": "confirmed|inferred|needs_review", "raw_text": "original or null" },
       "age_min": { "value": null, "confidence": "confirmed|needs_review" },
       "age_max": { "value": null, "confidence": "confirmed|needs_review" },
       "date": { "value": "YYYY-MM-DD or null", "confidence": "confirmed|inferred|needs_review", "raw_text": "original" },
@@ -198,7 +227,7 @@ OUTPUT FORMAT — return ONLY this JSON, no markdown, no explanation:
       "end_time": { "value": "HH:mm or null", "confidence": "confirmed|inferred|needs_review", "raw_text": "original" },
       "trial_fee": { "value": 0, "confidence": "confirmed|inferred|needs_review", "raw_text": "original or null" },
       "max_students": { "value": 0, "confidence": "confirmed|inferred|needs_review", "raw_text": "original or null" },
-      "notes": "any extra info"
+      "notes": "ONLY teacher name, room number, or logistics from the original data. NEVER put AI reasoning, explanations, or subject/level interpretations here. If no real note exists, use null."
     }
   ],
   "skipped_rows": [

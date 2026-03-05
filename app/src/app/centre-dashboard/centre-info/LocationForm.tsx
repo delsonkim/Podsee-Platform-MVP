@@ -1,15 +1,17 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { updateLocation } from './actions'
 
+interface LocationFields {
+  address: string
+  area: string
+  nearest_mrt: string
+  parking_info: string
+}
+
 interface Props {
-  initial: {
-    address: string
-    area: string
-    nearest_mrt: string
-    parking_info: string
-  }
+  initial: LocationFields
   isLive: boolean
 }
 
@@ -24,18 +26,16 @@ function ViewRow({ label, value }: { label: string; value: string | null }) {
 
 export default function LocationForm({ initial, isLive }: Props) {
   const [editing, setEditing] = useState(false)
-  const [address, setAddress] = useState(initial.address)
-  const [area, setArea] = useState(initial.area)
-  const [nearestMrt, setNearestMrt] = useState(initial.nearest_mrt)
-  const [parkingInfo, setParkingInfo] = useState(initial.parking_info)
+  const [form, setForm] = useState<LocationFields>(initial)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
+  const updateField = useCallback((field: keyof LocationFields, value: string) => {
+    setForm(prev => ({ ...prev, [field]: value }))
+  }, [])
+
   function handleCancel() {
-    setAddress(initial.address)
-    setArea(initial.area)
-    setNearestMrt(initial.nearest_mrt)
-    setParkingInfo(initial.parking_info)
+    setForm(initial)
     setEditing(false)
     setMessage(null)
   }
@@ -43,12 +43,7 @@ export default function LocationForm({ initial, isLive }: Props) {
   async function handleSave() {
     setSaving(true)
     setMessage(null)
-    const result = await updateLocation({
-      address,
-      area,
-      nearest_mrt: nearestMrt,
-      parking_info: parkingInfo,
-    })
+    const result = await updateLocation(form)
     setSaving(false)
     if ('error' in result) {
       setMessage({ type: 'error', text: result.error })
@@ -87,10 +82,10 @@ export default function LocationForm({ initial, isLive }: Props) {
 
       {!editing ? (
         <dl>
-          <ViewRow label="Address" value={address || null} />
-          <ViewRow label="Area" value={area || null} />
-          <ViewRow label="Nearest MRT" value={nearestMrt || null} />
-          <ViewRow label="Parking" value={parkingInfo || null} />
+          <ViewRow label="Address" value={form.address || null} />
+          <ViewRow label="Area" value={form.area || null} />
+          <ViewRow label="Nearest MRT" value={form.nearest_mrt || null} />
+          <ViewRow label="Parking" value={form.parking_info || null} />
         </dl>
       ) : (
         <>
@@ -99,8 +94,8 @@ export default function LocationForm({ initial, isLive }: Props) {
               <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
               <input
                 type="text"
-                value={address}
-                onChange={(e) => setAddress(e.target.value)}
+                value={form.address}
+                onChange={(e) => updateField('address', e.target.value)}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-gray-400 focus:border-gray-400 outline-none"
                 placeholder="Full address including postal code"
               />
@@ -110,8 +105,8 @@ export default function LocationForm({ initial, isLive }: Props) {
               <label className="block text-sm font-medium text-gray-700 mb-1">Area</label>
               <input
                 type="text"
-                value={area}
-                onChange={(e) => setArea(e.target.value)}
+                value={form.area}
+                onChange={(e) => updateField('area', e.target.value)}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-gray-400 focus:border-gray-400 outline-none"
                 placeholder="e.g. Buona Vista, Tampines"
               />
@@ -121,8 +116,8 @@ export default function LocationForm({ initial, isLive }: Props) {
               <label className="block text-sm font-medium text-gray-700 mb-1">Nearest MRT</label>
               <input
                 type="text"
-                value={nearestMrt}
-                onChange={(e) => setNearestMrt(e.target.value)}
+                value={form.nearest_mrt}
+                onChange={(e) => updateField('nearest_mrt', e.target.value)}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-gray-400 focus:border-gray-400 outline-none"
                 placeholder="e.g. Buona Vista MRT (EW21), 5-min walk"
               />
@@ -132,8 +127,8 @@ export default function LocationForm({ initial, isLive }: Props) {
               <label className="block text-sm font-medium text-gray-700 mb-1">Parking Info</label>
               <input
                 type="text"
-                value={parkingInfo}
-                onChange={(e) => setParkingInfo(e.target.value)}
+                value={form.parking_info}
+                onChange={(e) => updateField('parking_info', e.target.value)}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-gray-400 focus:border-gray-400 outline-none"
                 placeholder="Parking availability and rates"
               />

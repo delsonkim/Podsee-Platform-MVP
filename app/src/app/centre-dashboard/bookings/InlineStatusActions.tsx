@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useTransition, memo } from 'react'
 import { centreMarkAttended, centreMarkNoShow, centreMarkEnrolled } from './[id]/actions'
 import { BOOKING_STATUS_COLOR, BOOKING_STATUS_LABEL, type BookingStatus } from '@/types/database'
 
-export default function InlineStatusActions({
+export default memo(function InlineStatusActions({
   bookingId,
   status,
   trialDate,
@@ -73,4 +73,4 @@ export default function InlineStatusActions({
       )}
     </div>
   )
-}
+})

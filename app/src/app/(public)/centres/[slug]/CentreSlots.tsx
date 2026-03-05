@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation'
 import { useState, useEffect } from 'react'
 import type { SlotDetail } from '@/lib/public-data'
+import { getStreamDisplay } from '@/types/database'
 import { createClient } from '@/lib/supabase/client'
 import { signInWithGoogle } from '@/lib/auth'
 
@@ -53,16 +54,30 @@ export default function CentreSlots({ slots }: { slots: SlotDetail[] }) {
   const [selected, setSelected] = useState<string | null>(null)
   const [isLoggedIn, setIsLoggedIn] = useState(false)
   const [checking, setChecking] = useState(false)
+  const [bookedSlotIds, setBookedSlotIds] = useState<Set<string>>(new Set())
 
   const minFee =
     slots.length > 0 ? Math.min(...slots.map((s) => Number(s.trial_fee))) : null
 
   useEffect(() => {
     const supabase = createClient()
-    supabase.auth.getUser().then(({ data }) => {
-      setIsLoggedIn(!!data.user)
+    supabase.auth.getUser().then(async ({ data }) => {
+      if (!data.user) return
+      setIsLoggedIn(true)
+      // Fetch this parent's active bookings on these slots
+      const slotIds = slots.map((s) => s.id)
+      if (slotIds.length === 0) return
+      const { data: bookings } = await supabase
+        .from('bookings')
+        .select('slot_id')
+        .eq('parent_id', data.user.id)
+        .in('slot_id', slotIds)
+        .in('status', ['confirmed', 'completed', 'converted'])
+      if (bookings) {
+        setBookedSlotIds(new Set(bookings.map((b: any) => b.slot_id)))
+      }
     })
-  }, [])
+  }, [slots])
 
   async function handleBookClick() {
     if (!selected) return
@@ -77,6 +92,11 @@ export default function CentreSlots({ slots }: { slots: SlotDetail[] }) {
       signInWithGoogle(`/book/${selected}`)
     }
   }
+
+  // Only show stream badges if this centre has mixed streams (e.g. both G2 and G3 slots)
+  // If all slots have the same stream (or null), badges add no info and may confuse parents
+  const distinctStreams = new Set(slots.map((s) => s.stream).filter(Boolean))
+  const showStreamBadges = distinctStreams.size > 1
 
   const slotsByDate = slots.reduce<Record<string, SlotDetail[]>>((acc, slot) => {
     acc[slot.date] = [...(acc[slot.date] ?? []), slot]
@@ -112,6 +132,7 @@ export default function CentreSlots({ slots }: { slots: SlotDetail[] }) {
                     const isFull = slot.spots_remaining === 0
                     const isLow = !isFull && slot.spots_remaining <= 2
                     const isSelected = selected === slot.id
+                    const isBooked = bookedSlotIds.has(slot.id)
 
                     return (
                       <button
@@ -127,12 +148,19 @@ export default function CentreSlots({ slots }: { slots: SlotDetail[] }) {
                         }`}
                       >
                         {/* Selected checkmark */}
-                        {isSelected && (
+                        {isSelected && !isBooked && (
                           <div className="absolute top-3 right-3 w-5 h-5 bg-fern rounded-full flex items-center justify-center">
                             <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
                               <path d="M2.5 6l2.5 2.5 4.5-5" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                             </svg>
                           </div>
+                        )}
+
+                        {/* Already booked badge */}
+                        {isBooked && (
+                          <span className="absolute top-3 right-3 inline-flex items-center text-[10px] font-display font-bold bg-blue-100 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-full">
+                            Already booked
+                          </span>
                         )}
 
                         {/* Top row: time + price */}
@@ -141,8 +169,13 @@ export default function CentreSlots({ slots }: { slots: SlotDetail[] }) {
                             <p className="font-display font-bold text-forest text-sm">
                               {formatTime(slot.start_time)} – {formatTime(slot.end_time)}
                             </p>
-                            <p className="text-xs text-sage mt-1">
-                              {slot.subject.name} · {slot.level.label} · {duration(slot.start_time, slot.end_time)}
+                            <p className="text-xs text-sage mt-1 flex items-center gap-1 flex-wrap">
+                              <span>{slot.subject.name} · {slot.level.label}</span>
+                              {showStreamBadges && (() => {
+                                const sd = getStreamDisplay(slot.stream)
+                                return sd ? <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold border ${sd.color}`}>{sd.shortLabel}</span> : null
+                              })()}
+                              <span>· {duration(slot.start_time, slot.end_time)}</span>
                             </p>
                           </div>
                           <span className="font-display font-bold text-forest text-base shrink-0">
@@ -203,20 +236,27 @@ export default function CentreSlots({ slots }: { slots: SlotDetail[] }) {
             /* Slot selected state */
             <>
               <div className="min-w-0">
-                <p className="text-xs text-sage">Selected slot</p>
-                <p className="font-display font-bold text-forest text-sm leading-tight mt-0.5 truncate">
-                  {selectedSlot.subject.name} · {selectedSlot.level.label}
+                <p className="text-xs text-sage">{bookedSlotIds.has(selectedSlot.id) ? 'You already have a booking' : 'Selected slot'}</p>
+                <p className="font-display font-bold text-forest text-sm leading-tight mt-0.5 truncate flex items-center gap-1">
+                  <span>{selectedSlot.subject.name} · {selectedSlot.level.label}</span>
+                  {showStreamBadges && (() => {
+                    const sd = getStreamDisplay(selectedSlot.stream)
+                    return sd ? <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold border ${sd.color}`}>{sd.shortLabel}</span> : null
+                  })()}
                   <span className="text-sage font-normal">
-                    {' '}· {formatDate(selectedSlot.date)}, {formatTime(selectedSlot.start_time)}
+                    · {formatDate(selectedSlot.date)}, {formatTime(selectedSlot.start_time)}
                   </span>
                 </p>
+                {bookedSlotIds.has(selectedSlot.id) && (
+                  <p className="text-xs text-blue-600 mt-1">Have another child? You can still book for a different child.</p>
+                )}
               </div>
               <button
                 onClick={handleBookClick}
                 disabled={checking}
                 className="bg-fern text-white font-display font-bold text-sm px-6 py-3.5 rounded-xl hover:bg-forest transition-colors whitespace-nowrap shadow-xl shadow-fern/20 disabled:opacity-60 shrink-0"
               >
-                {checking ? 'Loading…' : `Book Trial · S$${selectedSlot.trial_fee}`}
+                {checking ? 'Loading…' : bookedSlotIds.has(selectedSlot.id) ? 'Book for Another Child' : `Book Trial · S$${selectedSlot.trial_fee}`}
               </button>
             </>
           ) : (

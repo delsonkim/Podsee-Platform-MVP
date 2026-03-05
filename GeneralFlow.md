@@ -99,6 +99,7 @@
   │ id (PK)                                                                  │
   │ centre_id (FK → centres)        subject_id (FK → subjects)               │
   │ level_id (FK → levels)          age_min, age_max, custom_level           │
+  │ stream (nullable text)          — FSBB band: G1/G2/G3/IP/IB             │
   │ date, start_time, end_time      trial_fee                                │
   │ max_students, spots_remaining   is_draft                                 │
   │ notes, created_at, updated_at                                            │

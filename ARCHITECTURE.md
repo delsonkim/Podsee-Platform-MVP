@@ -171,10 +171,27 @@ Located in `lib/ai-parser.ts`. Used during centre onboarding to bulk-import tria
 
 1. Centre pastes schedule text or uploads an image
 2. Text/image sent to Claude API with a structured extraction prompt
-3. Claude returns JSON array of parsed slots with `subject`, `level`, `date`, `time`, `fee`
+3. Claude returns JSON array of parsed slots with `subject`, `level`, `stream`, `date`, `time`, `fee`
 4. AI matches are fuzzy-matched against our `subjects` and `levels` tables
-5. Admin reviews in a clarification table, corrects any mismatches
-6. Corrections saved to `parse_corrections` table for future learning
+5. Stream/FSBB banding (G1/G2/G3/IP/IB) is extracted as a separate field — legacy terms like Express, NA, NT are normalized to G3, G2, G1
+6. Admin reviews in a clarification table, corrects any mismatches (including stream)
+7. Corrections saved to `parse_corrections` table for future learning
+
+### FSBB Stream Field
+
+Singapore's Full Subject-Based Banding (FSBB) system replaced the old Express/NA/NT tracks. Students now take individual subjects at different G-levels:
+
+| Stream Code | Full Name | Legacy Equivalent |
+|-------------|-----------|-------------------|
+| G3 | Express | Express |
+| G2 | Normal Academic | N(A) |
+| G1 | Foundational | N(T) |
+| IP | Integrated Programme | — |
+| IB | International Baccalaureate | — |
+
+The `stream` field is stored as a nullable text column on `trial_slots`. It's separate from `level` (which stores the year: SEC1, SEC2, etc.) because under FSBB, stream is per-subject, not per-student. A Sec 2 student might be G3 for Math but G2 for English.
+
+Stream is displayed as colored badge pills: G3 = blue, G2 = emerald, G1 = amber.
 
 ---
 
@@ -186,7 +203,7 @@ Located in `lib/ai-parser.ts`. Used during centre onboarding to bulk-import tria
 - Booking lifecycle: pending → confirmed → completed → converted/no_show/cancelled
 - Centre dashboard: view bookings, mark attendance, report enrollment
 - Centre dashboard: edit profile/location/policies with draft system
-- Centre dashboard: add trial slots (single + bulk import with AI parser)
+- Centre dashboard: add trial slots (single + bulk import with AI parser) with FSBB stream support
 - Admin dashboard: view all bookings, manage centres, verify outcomes
 - Admin dashboard: review centre drafts (approve/reject)
 - Admin dashboard: edit any centre directly (bypasses draft)

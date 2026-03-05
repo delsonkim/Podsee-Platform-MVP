@@ -1,4 +1,5 @@
 import { getSlotById, getAllLevels } from '@/lib/public-data'
+import { getStreamDisplay } from '@/types/database'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import BookingForm from './BookingForm'
@@ -95,15 +96,21 @@ export default async function BookingPage({
                 {[
                   { label: 'Centre', value: slot.centre.name },
                   { label: 'Subject', value: slot.subject.name },
-                  { label: 'Level', value: slot.level.label },
+                  { label: 'Level', value: slot.level.label, stream: slot.stream },
                   { label: 'Date', value: formatDate(slot.date) },
                   { label: 'Time', value: `${formatTime(slot.start_time)} – ${formatTime(slot.end_time)}` },
-                ].map(({ label, value }) => (
-                  <div key={label} className="flex justify-between text-sm gap-4">
-                    <dt className="text-sage shrink-0">{label}</dt>
-                    <dd className="font-medium text-forest text-right">{value}</dd>
-                  </div>
-                ))}
+                ].map(({ label, value, stream }) => {
+                  const sd = stream ? getStreamDisplay(stream) : null
+                  return (
+                    <div key={label} className="flex justify-between text-sm gap-4">
+                      <dt className="text-sage shrink-0">{label}</dt>
+                      <dd className="font-medium text-forest text-right flex items-center gap-1.5">
+                        <span>{value}</span>
+                        {sd && <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold border ${sd.color}`}>{sd.shortLabel}</span>}
+                      </dd>
+                    </div>
+                  )
+                })}
                 <div className="flex justify-between pt-2.5 border-t border-linen">
                   <dt className="text-sm text-sage">Trial fee</dt>
                   <dd className="font-display font-bold text-lg text-forest">S${slot.trial_fee}</dd>

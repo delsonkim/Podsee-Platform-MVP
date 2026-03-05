@@ -90,6 +90,7 @@ export interface DraftSlotInput {
   age_min: number | null
   age_max: number | null
   custom_level: string | null
+  stream: string | null
   date: string
   start_time: string
   end_time: string
@@ -123,6 +124,7 @@ export async function addDraftSlots(
       age_min: s.age_min,
       age_max: s.age_max,
       custom_level: s.custom_level,
+      stream: s.stream || null,
       date: s.date,
       start_time: s.start_time,
       end_time: s.end_time,
@@ -189,6 +191,75 @@ async function rederiveCentreSubjectsAndLevels(supabase: any, centreId: string) 
   if (pairings.length > 0) {
     await supabase.from('centre_subject_levels').insert(pairings)
   }
+}
+
+// ── Centre pricing ──
+
+export async function saveCentrePricing(
+  entries: { subject_id: string; level_id: string | null; stream: string | null; trial_fee: number; monthly_fee: number }[]
+): Promise<{ success: true } | { error: string }> {
+  const { centreId } = await requireCentreUser()
+  const supabase = createAdminClient()
+
+  await supabase.from('centre_pricing').delete().eq('centre_id', centreId)
+  if (entries.length > 0) {
+    const { error } = await supabase.from('centre_pricing').insert(
+      entries.map((e) => ({
+        centre_id: centreId,
+        subject_id: e.subject_id,
+        level_id: e.level_id,
+        stream: e.stream,
+        trial_fee: e.trial_fee,
+        monthly_fee: e.monthly_fee,
+      }))
+    )
+    if (error) return { error: error.message }
+  }
+
+  // Auto-fill trial_fee on draft slots
+  for (const entry of entries) {
+    if (entry.trial_fee > 0) {
+      let query = supabase
+        .from('trial_slots')
+        .update({ trial_fee: entry.trial_fee })
+        .eq('centre_id', centreId)
+        .eq('subject_id', entry.subject_id)
+        .eq('is_draft', true)
+
+      if (entry.level_id) {
+        query = query.eq('level_id', entry.level_id)
+      } else {
+        query = query.is('level_id', null)
+      }
+
+      if (entry.stream) {
+        query = query.eq('stream', entry.stream)
+      }
+
+      await query
+    }
+  }
+
+  revalidatePath('/centre-dashboard/slots')
+  return { success: true }
+}
+
+export async function fetchCentrePricing(): Promise<
+  { subject_id: string; level_id: string | null; stream: string | null; trial_fee: number; monthly_fee: number }[]
+> {
+  const { centreId } = await requireCentreUser()
+  const supabase = createAdminClient()
+  const { data } = await supabase
+    .from('centre_pricing')
+    .select('subject_id, level_id, stream, trial_fee, monthly_fee')
+    .eq('centre_id', centreId)
+  return (data ?? []).map((r) => ({
+    subject_id: r.subject_id,
+    level_id: r.level_id,
+    stream: r.stream,
+    trial_fee: Number(r.trial_fee),
+    monthly_fee: Number(r.monthly_fee),
+  }))
 }
 
 // ── Add single draft slot (individual form) ──

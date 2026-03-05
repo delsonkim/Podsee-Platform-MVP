@@ -225,6 +225,8 @@ All centre dashboard pages query with a `WHERE centre_id = ?` filter using the l
                          ║   Prompt includes:            ║
                          ║   • DB subjects + levels      ║
                          ║   • SEAB subject reference    ║
+                         ║   • FSBB stream/banding rules ║
+                         ║     (G1/G2/G3/IP/IB)         ║
                          ║   • Learned corrections       ║
                          ║     (centre + global)         ║
                          ║   • Date generation rules     ║
@@ -247,6 +249,9 @@ All centre dashboard pages query with a `WHERE centre_id = ?` filter using the l
                          ║   🔴 needs_review — user must  ║
                          ║                    answer      ║
                          ║                               ║
+                         ║   Fields: subject, level,     ║
+                         ║   stream, date, time, fee     ║
+                         ║                               ║
                          ║   + skipped_rows (non-class)  ║
                          ║   + fallback if AI fails      ║
                          ╚══════════════╤════════════════╝
@@ -261,9 +266,9 @@ All centre dashboard pages query with a `WHERE centre_id = ?` filter using the l
                          ║   "Max students: [___]"       ║
                          ║                               ║
                          ║   Per-row table:              ║
-                         ║   ☑ ✅ Math │ P4 │ Mar 16     ║
-                         ║   ☑ 🟡 [▼] │ S2 │ Mar 17     ║
-                         ║   ☑ 🔴 [▼] │ [_]│ [____]     ║
+                         ║   ☑ ✅ Math │ P4 │  — │Mar 16 ║
+                         ║   ☑ 🟡 [▼] │ S2 │ G3 │Mar 17 ║
+                         ║   ☑ 🔴 [▼] │ [_]│[▼] │[____] ║
                          ║   ☐ (excluded row)            ║
                          ║                               ║
                          ║   [Re-upload]  [Confirm (12)] ║
@@ -397,6 +402,50 @@ All centre dashboard pages query with a `WHERE centre_id = ?` filter using the l
 | `app/src/app/centre-dashboard/slots/page.tsx` | Centre slots page |
 | `app/src/components/SlotUploader.tsx` | Shared slot uploader |
 | `app/src/components/SlotClarificationTable.tsx` | Shared clarification table |
+
+### FSBB Stream / Subject-Based Banding Support (Done)
+
+Singapore's Full Subject-Based Banding (FSBB) replaced Express/NA/NT streaming from 2024. Students take individual subjects at G1 (Foundational), G2 (Normal Academic), or G3 (Express) levels. Many centres now label classes as "Sec 2 G3 Math" or "G1 English".
+
+#### What was done:
+- [x] **Database**: New migration `20260306000001_add_stream_to_trial_slots.sql` — adds nullable `stream` text column to `trial_slots`
+- [x] **Types**: Added `stream: string | null` to `TrialSlot` type + `StreamCode` type + `getStreamDisplay()` helper (returns label + color for badge rendering)
+- [x] **AI Parser**: Updated prompt to extract stream separately from level. Normalizes legacy terms (Express→G3, NA→G2, NT→G1). Stream returned as separate JSON field with confidence.
+- [x] **SlotUploader** (both admin + shared): `ParsedSlot` interface includes `stream`, fallback returns `stream: null`
+- [x] **SlotClarificationTable** (both admin + shared): Stream column with dropdown (G3/G2/G1/IP/IB/none), editable per-row
+- [x] **Slot creation actions** (both admin + centre-dashboard): `stream` field passed through to Supabase insert
+- [x] **AddSlotSection**: Stream dropdown in single-slot form (only visible when secondary level selected)
+- [x] **AddCentreForm**: Stream passed through bulk import pipeline
+- [x] **Centre dashboard slots page**: Stream column in both live and draft slot tables, colored badge pills
+- [x] **Public slot cards** (CentreSlots.tsx): Stream badge shown inline with subject/level on slot cards and sticky CTA
+- [x] **Booking page**: Stream badge shown in trial summary card next to level
+- [x] **Admin review page**: Stream column in pending trial slots table
+
+#### Design decisions:
+- **Separate column** (not compound level like SEC1-G3) — keeps the level filter clean for parents
+- **Nullable text** (not enum) — allows IP, IB, and future custom streams without migrations
+- **Colored badges**: G3 = blue, G2 = emerald, G1 = amber — visually distinct, parent-friendly
+- **Only shown for secondary levels** — primary and JC don't have G-level banding
+
+#### Files
+| File | Change |
+|------|--------|
+| `supabase/migrations/20260306000001_add_stream_to_trial_slots.sql` | New migration |
+| `app/src/types/database.ts` | `stream` field + `getStreamDisplay()` |
+| `app/src/types/ai-parser.ts` | `stream` in `AIParsedSlot` |
+| `app/src/lib/ai-parser.ts` | Stream extraction + FSBB normalization in prompt |
+| `app/src/components/SlotUploader.tsx` | `stream` in `ParsedSlot` |
+| `app/src/components/SlotClarificationTable.tsx` | Stream column + dropdown |
+| `app/src/app/admin/centres/new/SlotUploader.tsx` | `stream` in `ParsedSlot` |
+| `app/src/app/admin/centres/new/SlotClarificationTable.tsx` | Stream column + dropdown |
+| `app/src/app/admin/centres/new/actions.ts` | `stream` in insert |
+| `app/src/app/admin/centres/new/AddCentreForm.tsx` | Pass `stream` through |
+| `app/src/app/centre-dashboard/slots/actions.ts` | `stream` in insert |
+| `app/src/app/centre-dashboard/slots/AddSlotSection.tsx` | Stream dropdown in form |
+| `app/src/app/centre-dashboard/slots/page.tsx` | Stream column + badges |
+| `app/src/app/(public)/centres/[slug]/CentreSlots.tsx` | Stream badges on cards |
+| `app/src/app/(public)/book/[slotId]/page.tsx` | Stream badge in summary |
+| `app/src/app/admin/centres/review/[id]/page.tsx` | Stream column in review |
 
 ---
 
@@ -737,19 +786,104 @@ All emails include booking reference code (PSE-YYMMDD-XXXX), warm early-adopter 
 
 ---
 
-## 8. Trial vs Regular Class Info (Pricing & Duration)
+## 8. Structured Pricing (Per Subject + Level)
 
-**Problem**: Some centres offer 1hr trial classes for subjects that normally run 2hrs. Trial fees differ from regular monthly fees. Parents need to see both to make informed decisions.
+**Problem**: Trial fees and monthly fees vary by subject and level. A centre might charge S$10 trial for P3 Math but S$20 for Sec 2 Science. Currently trial_fee is set per slot during upload, but there's no way to show a pricing overview or auto-fill fees.
 
-**Approach**: Free-text field for MVP. Let centres describe their pricing however they want. Structure it later when patterns emerge.
+**Approach**: After the AI parser identifies subjects + levels from the schedule, prompt the centre to fill in pricing for each unique subject+level pair. Store in a dedicated `centre_pricing` table. Show structured pricing on the public centre profile.
+
+### Flow
+1. Centre uploads schedule → AI parser extracts slots with subjects + levels
+2. Centre reviews/corrects parsed slots in clarification table
+3. **NEW**: After slots confirmed, extract unique subject+level pairs and show a pricing table for the centre to fill in trial fee + monthly fee per pair
+4. Trial fees auto-populate into the parsed slots
+5. Monthly fees stored for display on public profile
+
+### Schema
+```sql
+CREATE TABLE centre_pricing (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  centre_id UUID NOT NULL REFERENCES centres(id) ON DELETE CASCADE,
+  subject_id UUID NOT NULL REFERENCES subjects(id),
+  level_id UUID REFERENCES levels(id),
+  stream TEXT,
+  trial_fee NUMERIC(8,2) NOT NULL DEFAULT 0,
+  monthly_fee NUMERIC(8,2),
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(centre_id, subject_id, level_id, stream)
+);
+```
+
+### Confirmed Decisions
+- monthly_fee is **required** (NOT NULL)
+- AI parser: do NOT touch — user is working on it separately
+- Pricing is editable standalone from the centre dashboard at any time
 
 ### Tasks
-- [ ] Migration: add `pricing_info TEXT` to centres table
-- [ ] TypeScript type: add `pricing_info` to Centre interface
-- [ ] Centre dashboard: add Pricing field to centre-info forms (LinkedIn-style view/edit)
-- [ ] Admin edit page: add pricing_info to profile section
-- [ ] Add Centre form: add pricing_info textarea in Step 2 (About). Placeholder: "e.g. Trial: 1hr, S$10 | Regular classes: 2hrs, S$280/month"
-- [ ] Public centre detail page: show pricing info section (between About and Available Trials)
+
+#### Cleanup (remove wrong free-text approach)
+- [x] Remove `pricing_info` from Centre TypeScript interface + mock data
+- [x] Remove pricing_info from ProfileForm, AdminEditForms, AddCentreForm, centre-info actions/page, admin centre edit page, public centre profile
+- [x] Delete migration file `20260306000002_add_pricing_info.sql`
+
+#### Schema + Types
+- [x] Migration: create `centre_pricing` table + `centre_promotions` table
+- [x] TypeScript types: add `CentrePricing` + `CentrePromotion` interfaces to database.ts
+
+#### Pricing Step Component
+- [x] New `PricingStep.tsx` component — table of subject+level pairs with trial_fee + monthly_fee inputs
+- [x] Server action: `saveCentrePricing(centreId, pricings[])` — upsert into centre_pricing
+- [x] Auto-fill: when pricing saved, update trial_fee on corresponding draft slots
+
+#### Wire into Onboarding (AddCentreForm)
+- [x] After slot clarification confirmed, show PricingStep as Step 5 with unique pairs extracted from parsed slots
+- [x] Save pricing on "Confirm & Finish"
+
+#### Wire into Centre Dashboard (AddSlotSection)
+- [x] After bulk import confirmed, show PricingStep for subject+level pairs (existing pricing pre-filled)
+- [x] Single slot add: trial fee field stays as-is (manual entry)
+
+#### Centre Dashboard Pricing Management
+- [x] Centre-info page: "Pricing" section (view/edit table of all centre_pricing rows, LinkedIn-style toggle)
+- [x] Server actions for standalone pricing edits (`saveCentrePricing`, `fetchCentrePricing`)
+
+#### Centre Dashboard Promotions Management
+- [x] Centre-info page: "Promotions" section (add/pause/delete promotions)
+- [x] Server actions for promotions CRUD (`addPromotion`, `deletePromotion`, `togglePromotion`, `getPromotions`)
+
+#### Admin
+- [x] Admin centre edit page: pricing section (read-only view of centre_pricing rows)
+- [x] Admin centre edit page: promotions section (read-only view of centre_promotions)
+
+#### Public Display
+- [ ] Public centre profile: structured pricing table grouped by subject, sorted by level
+- [ ] Public centre profile: promotions displayed as highlighted cards/badges
+- [ ] Booking page: show monthly fee from centre_pricing alongside trial fee
+
+#### Verification
+- [x] `cd app && npx tsc --noEmit` passes
+- [ ] Test: upload schedule → confirm slots → pricing step appears with correct pairs
+- [ ] Test: fill pricing → slots get trial_fee auto-filled → submit
+- [ ] Test: public profile shows pricing table + promotions
+
+### Promotions Schema
+```sql
+CREATE TABLE centre_promotions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  centre_id UUID NOT NULL REFERENCES centres(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  description TEXT,
+  discount_type TEXT NOT NULL CHECK (discount_type IN ('percentage', 'flat', 'free')),
+  discount_value NUMERIC(8,2),
+  applies_to TEXT NOT NULL DEFAULT 'monthly_fee'
+    CHECK (applies_to IN ('trial_fee', 'monthly_fee', 'registration', 'materials', 'other')),
+  valid_until DATE,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+```
 
 ---
 

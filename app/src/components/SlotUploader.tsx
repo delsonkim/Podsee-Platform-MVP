@@ -29,6 +29,7 @@ export interface ParsedSlot {
   age_min: number | null
   age_max: number | null
   custom_level: string | null
+  stream: string | null
   date: string
   start_time: string
   end_time: string
@@ -161,6 +162,7 @@ function parseRowsFallback(rawText: string, subjects: Subject[], levels: Level[]
       age_min: levelMatch.ageMin,
       age_max: levelMatch.ageMax,
       custom_level: levelMatch.customLevel,
+      stream: null,
       date: date ?? '',
       start_time: startTime ?? '',
       end_time: endTime ?? '',
@@ -482,6 +484,7 @@ function fallbackToAIResult(slots: ParsedSlot[], reason: string): AIParseResult 
         match_id: s.level_id,
         raw_text: s.level_label,
       },
+      stream: { value: null, confidence: 'confirmed' as const },
       age_min: { value: s.age_min, confidence: 'confirmed' as const },
       age_max: { value: s.age_max, confidence: 'confirmed' as const },
       date: {

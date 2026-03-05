@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useTransition, memo } from 'react'
 import { centreCancelBooking, centreMarkAttended, centreMarkNoShow, centreMarkEnrolled } from './actions'
 
-export default function CentreBookingActions({
+export default memo(function CentreBookingActions({
   bookingId,
   status,
   trialDate,
@@ -225,4 +225,4 @@ export default function CentreBookingActions({
       )}
     </div>
   )
-}
+})

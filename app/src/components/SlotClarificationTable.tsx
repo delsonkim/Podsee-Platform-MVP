@@ -36,6 +36,7 @@ interface SlotOverrides {
   age_min: number | null
   age_max: number | null
   custom_level: string | null
+  stream: string | null
   date: string
   start_time: string
   end_time: string
@@ -55,6 +56,7 @@ function initOverrides(slot: AIParsedSlot): SlotOverrides {
     age_min: slot.age_min.value,
     age_max: slot.age_max.value,
     custom_level: null,
+    stream: slot.stream?.value ?? null,
     date: slot.date.value ?? '',
     start_time: slot.start_time.value ?? '',
     end_time: slot.end_time.value ?? '',
@@ -148,6 +150,7 @@ export default function SlotClarificationTable({ result, subjects, levels, centr
           age_min: o.age_min,
           age_max: o.age_max,
           custom_level: o.custom_level,
+          stream: o.stream,
           date: o.date,
           start_time: o.start_time,
           end_time: o.end_time,
@@ -278,6 +281,7 @@ export default function SlotClarificationTable({ result, subjects, levels, centr
               <th className="px-3 py-2 text-left font-medium text-gray-500 w-8"></th>
               <th className="px-3 py-2 text-left font-medium text-gray-500">Subject</th>
               <th className="px-3 py-2 text-left font-medium text-gray-500">Level</th>
+              <th className="px-3 py-2 text-left font-medium text-gray-500">Stream</th>
               <th className="px-3 py-2 text-left font-medium text-gray-500">Date</th>
               <th className="px-3 py-2 text-left font-medium text-gray-500">Time</th>
               {!allFeesMissing && <th className="px-3 py-2 text-left font-medium text-gray-500">Fee</th>}
@@ -293,6 +297,7 @@ export default function SlotClarificationTable({ result, subjects, levels, centr
                 </td>
                 <td className="px-3 py-2"><SubjectCell field={slot.subject} override={overrides[i]} subjects={subjects} onChange={(patch) => updateSlot(i, patch)} /></td>
                 <td className="px-3 py-2"><LevelCell field={slot.level} override={overrides[i]} levels={levels} onChange={(patch) => updateSlot(i, patch)} /></td>
+                <td className="px-3 py-2"><StreamCell stream={overrides[i].stream} onChange={(v) => updateSlot(i, { stream: v })} /></td>
                 <td className="px-3 py-2"><TextCell confidence={slot.date.confidence} value={overrides[i].date} rawText={slot.date.raw_text} placeholder="YYYY-MM-DD" onChange={(v) => updateSlot(i, { date: v })} /></td>
                 <td className="px-3 py-2 whitespace-nowrap">
                   <div className="flex items-center gap-1">
@@ -412,6 +417,29 @@ function LevelCell({ field, override, levels, onChange }: { field: AIParsedSlot[
       {override.custom_level !== null && <input type="text" value={override.custom_level} onChange={(e) => onChange({ custom_level: e.target.value || null })} placeholder="e.g. White Belt, Ages 6-9" className="w-full text-xs border border-gray-200 rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-gray-900/20 focus:border-gray-400" />}
       {field.raw_text && field.confidence === 'inferred' && <span className="text-[10px] text-gray-400">from &ldquo;{field.raw_text}&rdquo;</span>}
     </div>
+  )
+}
+
+const STREAM_OPTIONS = [
+  { value: '', label: '—' },
+  { value: 'G3', label: 'G3 (Express)' },
+  { value: 'G2', label: 'G2 (Normal Academic)' },
+  { value: 'G1', label: 'G1 (Foundational)' },
+  { value: 'IP', label: 'IP' },
+  { value: 'IB', label: 'IB' },
+]
+
+function StreamCell({ stream, onChange }: { stream: string | null; onChange: (v: string | null) => void }) {
+  return (
+    <select
+      value={stream ?? ''}
+      onChange={(e) => onChange(e.target.value || null)}
+      className="w-full text-xs border border-gray-200 rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-gray-900/20 focus:border-gray-400"
+    >
+      {STREAM_OPTIONS.map((o) => (
+        <option key={o.value} value={o.value}>{o.label}</option>
+      ))}
+    </select>
   )
 }
 

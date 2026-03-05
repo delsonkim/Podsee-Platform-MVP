@@ -13,6 +13,7 @@ export interface AIField<T> {
 export interface AIParsedSlot {
   subject: AIField<string>
   level: AIField<string>
+  stream: AIField<string | null>
   age_min: AIField<number | null>
   age_max: AIField<number | null>
   date: AIField<string>

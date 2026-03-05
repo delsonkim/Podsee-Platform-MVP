@@ -206,7 +206,7 @@ function BookingCard({ booking, variant }: { booking: any; variant: 'upcoming' |
 
         {/* Date & time — prominent */}
         {slot && (
-          <div className="flex items-center gap-4 text-sm mt-3">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 text-sm mt-3">
             <div className="flex items-center gap-1.5 text-forest font-display font-semibold">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
@@ -227,7 +227,7 @@ function BookingCard({ booking, variant }: { booking: any; variant: 'upcoming' |
         )}
 
         {/* Child info */}
-        <div className="mt-3 pt-3 border-t border-linen flex items-center gap-4 text-xs text-sage">
+        <div className="mt-3 pt-3 border-t border-linen flex flex-wrap items-center gap-2 sm:gap-4 text-xs text-sage">
           <span>Child: <span className="text-forest font-medium">{booking.child_name_at_booking}</span></span>
           <span>Level: <span className="text-forest font-medium">{booking.child_level_at_booking}</span></span>
         </div>

@@ -1,5 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import Link from 'next/link'
+import DeleteCentreButton from './review/DeleteCentreButton'
 
 export default async function CentresPage() {
   const supabase = createAdminClient()
@@ -56,6 +57,7 @@ export default async function CentresPage() {
                 <th className="text-left px-4 py-3 font-medium text-gray-500">Subjects</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-500">Status</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-500">Added</th>
+                <th className="px-4 py-3"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -104,6 +106,9 @@ export default async function CentresPage() {
                         month: 'short',
                         year: 'numeric',
                       })}
+                    </td>
+                    <td className="px-4 py-3">
+                      <DeleteCentreButton centreId={c.id} centreName={c.name} />
                     </td>
                   </tr>
                 )

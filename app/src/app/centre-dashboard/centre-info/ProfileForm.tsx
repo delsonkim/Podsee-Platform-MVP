@@ -1,7 +1,15 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { updateProfile } from './actions'
+
+interface ProfileFields {
+  description: string
+  teaching_style: string
+  track_record: string
+  class_size: string
+  years_operating: string
+}
 
 interface Props {
   initial: {
@@ -23,22 +31,28 @@ function ViewRow({ label, value }: { label: string; value: string | number | nul
   )
 }
 
+function toFormState(initial: Props['initial']): ProfileFields {
+  return {
+    description: initial.description,
+    teaching_style: initial.teaching_style,
+    track_record: initial.track_record,
+    class_size: initial.class_size?.toString() ?? '',
+    years_operating: initial.years_operating?.toString() ?? '',
+  }
+}
+
 export default function ProfileForm({ initial, isLive }: Props) {
   const [editing, setEditing] = useState(false)
-  const [description, setDescription] = useState(initial.description)
-  const [teachingStyle, setTeachingStyle] = useState(initial.teaching_style)
-  const [trackRecord, setTrackRecord] = useState(initial.track_record)
-  const [classSize, setClassSize] = useState(initial.class_size?.toString() ?? '')
-  const [yearsOperating, setYearsOperating] = useState(initial.years_operating?.toString() ?? '')
+  const [form, setForm] = useState<ProfileFields>(() => toFormState(initial))
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
+  const updateField = useCallback((field: keyof ProfileFields, value: string) => {
+    setForm(prev => ({ ...prev, [field]: value }))
+  }, [])
+
   function handleCancel() {
-    setDescription(initial.description)
-    setTeachingStyle(initial.teaching_style)
-    setTrackRecord(initial.track_record)
-    setClassSize(initial.class_size?.toString() ?? '')
-    setYearsOperating(initial.years_operating?.toString() ?? '')
+    setForm(toFormState(initial))
     setEditing(false)
     setMessage(null)
   }
@@ -47,11 +61,11 @@ export default function ProfileForm({ initial, isLive }: Props) {
     setSaving(true)
     setMessage(null)
     const result = await updateProfile({
-      description,
-      teaching_style: teachingStyle,
-      track_record: trackRecord,
-      class_size: classSize ? Number(classSize) : null,
-      years_operating: yearsOperating ? Number(yearsOperating) : null,
+      description: form.description,
+      teaching_style: form.teaching_style,
+      track_record: form.track_record,
+      class_size: form.class_size ? Number(form.class_size) : null,
+      years_operating: form.years_operating ? Number(form.years_operating) : null,
     })
     setSaving(false)
     if ('error' in result) {
@@ -91,11 +105,11 @@ export default function ProfileForm({ initial, isLive }: Props) {
 
       {!editing ? (
         <dl>
-          <ViewRow label="Description" value={description} />
-          <ViewRow label="Teaching Style" value={teachingStyle} />
-          <ViewRow label="Track Record" value={trackRecord} />
-          <ViewRow label="Class Size" value={classSize ? Number(classSize) : null} />
-          <ViewRow label="Years Operating" value={yearsOperating ? Number(yearsOperating) : null} />
+          <ViewRow label="Description" value={form.description} />
+          <ViewRow label="Teaching Style" value={form.teaching_style} />
+          <ViewRow label="Track Record" value={form.track_record} />
+          <ViewRow label="Class Size" value={form.class_size ? Number(form.class_size) : null} />
+          <ViewRow label="Years Operating" value={form.years_operating ? Number(form.years_operating) : null} />
         </dl>
       ) : (
         <>
@@ -103,8 +117,8 @@ export default function ProfileForm({ initial, isLive }: Props) {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
               <textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
+                value={form.description}
+                onChange={(e) => updateField('description', e.target.value)}
                 rows={3}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-gray-400 focus:border-gray-400 outline-none"
                 placeholder="What makes your centre unique?"
@@ -114,8 +128,8 @@ export default function ProfileForm({ initial, isLive }: Props) {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Teaching Style</label>
               <textarea
-                value={teachingStyle}
-                onChange={(e) => setTeachingStyle(e.target.value)}
+                value={form.teaching_style}
+                onChange={(e) => updateField('teaching_style', e.target.value)}
                 rows={3}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-gray-400 focus:border-gray-400 outline-none"
                 placeholder="How do you teach?"
@@ -125,8 +139,8 @@ export default function ProfileForm({ initial, isLive }: Props) {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Track Record</label>
               <textarea
-                value={trackRecord}
-                onChange={(e) => setTrackRecord(e.target.value)}
+                value={form.track_record}
+                onChange={(e) => updateField('track_record', e.target.value)}
                 rows={3}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-gray-400 focus:border-gray-400 outline-none"
                 placeholder="Results, achievements, student outcomes..."
@@ -138,8 +152,8 @@ export default function ProfileForm({ initial, isLive }: Props) {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Class Size</label>
                 <input
                   type="number"
-                  value={classSize}
-                  onChange={(e) => setClassSize(e.target.value)}
+                  value={form.class_size}
+                  onChange={(e) => updateField('class_size', e.target.value)}
                   min={1}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-gray-400 focus:border-gray-400 outline-none"
                   placeholder="e.g. 8"
@@ -149,14 +163,15 @@ export default function ProfileForm({ initial, isLive }: Props) {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Years Operating</label>
                 <input
                   type="number"
-                  value={yearsOperating}
-                  onChange={(e) => setYearsOperating(e.target.value)}
+                  value={form.years_operating}
+                  onChange={(e) => updateField('years_operating', e.target.value)}
                   min={0}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-gray-400 focus:border-gray-400 outline-none"
                   placeholder="e.g. 5"
                 />
               </div>
             </div>
+
           </div>
 
           <div className="flex items-center gap-3 mt-5 pt-4 border-t border-gray-100">

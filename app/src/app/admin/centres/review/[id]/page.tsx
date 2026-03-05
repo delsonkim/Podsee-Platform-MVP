@@ -1,4 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/admin'
+import { getStreamDisplay } from '@/types/database'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { DraftDataActions, DraftSlotActions, PublishButton } from './ReviewActions'
@@ -61,7 +62,7 @@ export default async function CentreReviewDetailPage({ params }: { params: Promi
 
   const { data: draftSlots } = await supabase
     .from('trial_slots')
-    .select('id, date, start_time, end_time, trial_fee, max_students, subjects(name), levels(label)')
+    .select('id, date, start_time, end_time, trial_fee, max_students, stream, subjects(name), levels(label)')
     .eq('centre_id', id)
     .eq('is_draft', true)
     .order('date', { ascending: true })
@@ -165,6 +166,7 @@ export default async function CentreReviewDetailPage({ params }: { params: Promi
                 <tr>
                   <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Subject</th>
                   <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Level</th>
+                  <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Stream</th>
                   <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Date</th>
                   <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Time</th>
                   <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Fee</th>
@@ -176,6 +178,12 @@ export default async function CentreReviewDetailPage({ params }: { params: Promi
                   <tr key={s.id}>
                     <td className="px-4 py-2.5 text-gray-800 font-medium">{s.subjects?.name ?? '—'}</td>
                     <td className="px-4 py-2.5 text-gray-600">{s.levels?.label ?? '—'}</td>
+                    <td className="px-4 py-2.5">
+                      {(() => {
+                        const sd = getStreamDisplay(s.stream)
+                        return sd ? <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border ${sd.color}`}>{sd.shortLabel}</span> : <span className="text-gray-300">—</span>
+                      })()}
+                    </td>
                     <td className="px-4 py-2.5 text-gray-500">{formatDate(s.date)}</td>
                     <td className="px-4 py-2.5 text-gray-500">{formatTime(s.start_time)} – {formatTime(s.end_time)}</td>
                     <td className="px-4 py-2.5 text-gray-700">S${Number(s.trial_fee).toFixed(0)}</td>

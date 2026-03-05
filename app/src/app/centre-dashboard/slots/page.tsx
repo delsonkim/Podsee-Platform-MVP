@@ -1,5 +1,6 @@
 import { requireCentreUser } from '@/lib/centre-auth'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { getStreamDisplay } from '@/types/database'
 import AddSlotSection from './AddSlotSection'
 
 function formatDate(d: string) {
@@ -27,12 +28,13 @@ function CapacityBar({ max, remaining }: { max: number; remaining: number }) {
 
 function SlotTable({ slots, emptyMessage }: { slots: any[]; emptyMessage: string }) {
   return (
-    <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-      <table className="w-full text-sm">
+    <div className="bg-white rounded-lg border border-gray-200 overflow-x-auto">
+      <table className="w-full text-sm min-w-[700px]">
         <thead className="bg-gray-50 border-b border-gray-200">
           <tr>
             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Subject</th>
             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Level</th>
+            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Stream</th>
             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Date</th>
             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Time</th>
             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Fee</th>
@@ -43,13 +45,19 @@ function SlotTable({ slots, emptyMessage }: { slots: any[]; emptyMessage: string
         <tbody className="divide-y divide-gray-100">
           {slots.length === 0 && (
             <tr>
-              <td colSpan={7} className="px-4 py-8 text-center text-gray-400">{emptyMessage}</td>
+              <td colSpan={8} className="px-4 py-8 text-center text-gray-400">{emptyMessage}</td>
             </tr>
           )}
           {slots.map((s: any) => (
             <tr key={s.id} className="hover:bg-gray-50">
               <td className="px-4 py-3 text-gray-800 font-medium">{s.subjects?.name ?? '—'}</td>
               <td className="px-4 py-3 text-gray-600">{s.levels?.label ?? '—'}</td>
+              <td className="px-4 py-3">
+                {(() => {
+                  const sd = getStreamDisplay(s.stream)
+                  return sd ? <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border ${sd.color}`}>{sd.shortLabel}</span> : <span className="text-gray-300">—</span>
+                })()}
+              </td>
               <td className="px-4 py-3 text-gray-500">{formatDate(s.date)}</td>
               <td className="px-4 py-3 text-gray-500">{formatTime(s.start_time)} – {formatTime(s.end_time)}</td>
               <td className="px-4 py-3 text-gray-700">S${Number(s.trial_fee).toFixed(0)}</td>
@@ -75,13 +83,14 @@ function DraftSlotTable({ slots }: { slots: any[] }) {
   if (slots.length === 0) return null
 
   return (
-    <div className="bg-white rounded-lg border border-amber-200 overflow-hidden">
-      <table className="w-full text-sm">
+    <div className="bg-white rounded-lg border border-amber-200 overflow-x-auto">
+      <table className="w-full text-sm min-w-[700px]">
         <thead className="bg-amber-100/60 border-b border-amber-200">
           <tr>
             <th className="px-4 py-3 text-left text-xs font-medium text-amber-700 uppercase tracking-wide">Status</th>
             <th className="px-4 py-3 text-left text-xs font-medium text-amber-700 uppercase tracking-wide">Subject</th>
             <th className="px-4 py-3 text-left text-xs font-medium text-amber-700 uppercase tracking-wide">Level</th>
+            <th className="px-4 py-3 text-left text-xs font-medium text-amber-700 uppercase tracking-wide">Stream</th>
             <th className="px-4 py-3 text-left text-xs font-medium text-amber-700 uppercase tracking-wide">Date</th>
             <th className="px-4 py-3 text-left text-xs font-medium text-amber-700 uppercase tracking-wide">Time</th>
             <th className="px-4 py-3 text-left text-xs font-medium text-amber-700 uppercase tracking-wide">Fee</th>
@@ -96,6 +105,12 @@ function DraftSlotTable({ slots }: { slots: any[] }) {
               </td>
               <td className="px-4 py-3 text-gray-800 font-medium">{s.subjects?.name ?? '—'}</td>
               <td className="px-4 py-3 text-gray-600">{s.levels?.label ?? '—'}</td>
+              <td className="px-4 py-3">
+                {(() => {
+                  const sd = getStreamDisplay(s.stream)
+                  return sd ? <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border ${sd.color}`}>{sd.shortLabel}</span> : <span className="text-gray-300">—</span>
+                })()}
+              </td>
               <td className="px-4 py-3 text-gray-500">{formatDate(s.date)}</td>
               <td className="px-4 py-3 text-gray-500">{formatTime(s.start_time)} – {formatTime(s.end_time)}</td>
               <td className="px-4 py-3 text-gray-700">S${Number(s.trial_fee).toFixed(0)}</td>
@@ -116,7 +131,7 @@ export default async function CentreSlotsPage() {
   const [{ data: upcoming }, { data: past }, { data: drafts }, { data: subjects }, { data: levels }] = await Promise.all([
     supabase
       .from('trial_slots')
-      .select('id, date, start_time, end_time, trial_fee, max_students, spots_remaining, subjects(name), levels(label)')
+      .select('id, date, start_time, end_time, trial_fee, max_students, spots_remaining, stream, subjects(name), levels(label)')
       .eq('centre_id', centreId)
       .eq('is_draft', false)
       .gte('date', today)
@@ -124,7 +139,7 @@ export default async function CentreSlotsPage() {
       .order('start_time', { ascending: true }),
     supabase
       .from('trial_slots')
-      .select('id, date, start_time, end_time, trial_fee, max_students, spots_remaining, subjects(name), levels(label)')
+      .select('id, date, start_time, end_time, trial_fee, max_students, spots_remaining, stream, subjects(name), levels(label)')
       .eq('centre_id', centreId)
       .eq('is_draft', false)
       .lt('date', today)
@@ -132,7 +147,7 @@ export default async function CentreSlotsPage() {
       .limit(20),
     supabase
       .from('trial_slots')
-      .select('id, date, start_time, end_time, trial_fee, max_students, subjects(name), levels(label)')
+      .select('id, date, start_time, end_time, trial_fee, max_students, stream, subjects(name), levels(label)')
       .eq('centre_id', centreId)
       .eq('is_draft', true)
       .order('date', { ascending: true }),

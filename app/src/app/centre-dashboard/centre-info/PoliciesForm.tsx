@@ -1,17 +1,19 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { updatePolicies } from './actions'
 
+interface PolicyFields {
+  replacement_class_policy: string
+  makeup_class_policy: string
+  commitment_terms: string
+  notice_period_terms: string
+  payment_terms: string
+  other_policies: string
+}
+
 interface Props {
-  initial: {
-    replacement_class_policy: string
-    makeup_class_policy: string
-    commitment_terms: string
-    notice_period_terms: string
-    payment_terms: string
-    other_policies: string
-  }
+  initial: PolicyFields
   isLive: boolean
 }
 
@@ -26,22 +28,16 @@ function ViewRow({ label, value }: { label: string; value: string | null }) {
 
 export default function PoliciesForm({ initial, isLive }: Props) {
   const [editing, setEditing] = useState(false)
-  const [replacementClassPolicy, setReplacementClassPolicy] = useState(initial.replacement_class_policy)
-  const [makeupClassPolicy, setMakeupClassPolicy] = useState(initial.makeup_class_policy)
-  const [commitmentTerms, setCommitmentTerms] = useState(initial.commitment_terms)
-  const [noticePeriodTerms, setNoticePeriodTerms] = useState(initial.notice_period_terms)
-  const [paymentTerms, setPaymentTerms] = useState(initial.payment_terms)
-  const [otherPolicies, setOtherPolicies] = useState(initial.other_policies)
+  const [form, setForm] = useState<PolicyFields>(initial)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
+  const updateField = useCallback((field: keyof PolicyFields, value: string) => {
+    setForm(prev => ({ ...prev, [field]: value }))
+  }, [])
+
   function handleCancel() {
-    setReplacementClassPolicy(initial.replacement_class_policy)
-    setMakeupClassPolicy(initial.makeup_class_policy)
-    setCommitmentTerms(initial.commitment_terms)
-    setNoticePeriodTerms(initial.notice_period_terms)
-    setPaymentTerms(initial.payment_terms)
-    setOtherPolicies(initial.other_policies)
+    setForm(initial)
     setEditing(false)
     setMessage(null)
   }
@@ -49,14 +45,7 @@ export default function PoliciesForm({ initial, isLive }: Props) {
   async function handleSave() {
     setSaving(true)
     setMessage(null)
-    const result = await updatePolicies({
-      replacement_class_policy: replacementClassPolicy,
-      makeup_class_policy: makeupClassPolicy,
-      commitment_terms: commitmentTerms,
-      notice_period_terms: noticePeriodTerms,
-      payment_terms: paymentTerms,
-      other_policies: otherPolicies,
-    })
+    const result = await updatePolicies(form)
     setSaving(false)
     if ('error' in result) {
       setMessage({ type: 'error', text: result.error })
@@ -95,12 +84,12 @@ export default function PoliciesForm({ initial, isLive }: Props) {
 
       {!editing ? (
         <dl>
-          <ViewRow label="Replacement Class" value={replacementClassPolicy || null} />
-          <ViewRow label="Makeup Class" value={makeupClassPolicy || null} />
-          <ViewRow label="Commitment" value={commitmentTerms || null} />
-          <ViewRow label="Notice Period" value={noticePeriodTerms || null} />
-          <ViewRow label="Payment" value={paymentTerms || null} />
-          <ViewRow label="Other" value={otherPolicies || null} />
+          <ViewRow label="Replacement Class" value={form.replacement_class_policy || null} />
+          <ViewRow label="Makeup Class" value={form.makeup_class_policy || null} />
+          <ViewRow label="Commitment" value={form.commitment_terms || null} />
+          <ViewRow label="Notice Period" value={form.notice_period_terms || null} />
+          <ViewRow label="Payment" value={form.payment_terms || null} />
+          <ViewRow label="Other" value={form.other_policies || null} />
         </dl>
       ) : (
         <>
@@ -108,8 +97,8 @@ export default function PoliciesForm({ initial, isLive }: Props) {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Replacement Class Policy</label>
               <textarea
-                value={replacementClassPolicy}
-                onChange={(e) => setReplacementClassPolicy(e.target.value)}
+                value={form.replacement_class_policy}
+                onChange={(e) => updateField('replacement_class_policy', e.target.value)}
                 rows={2}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-gray-400 focus:border-gray-400 outline-none"
                 placeholder="Your replacement class policy..."
@@ -119,8 +108,8 @@ export default function PoliciesForm({ initial, isLive }: Props) {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Makeup Class Policy</label>
               <textarea
-                value={makeupClassPolicy}
-                onChange={(e) => setMakeupClassPolicy(e.target.value)}
+                value={form.makeup_class_policy}
+                onChange={(e) => updateField('makeup_class_policy', e.target.value)}
                 rows={2}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-gray-400 focus:border-gray-400 outline-none"
                 placeholder="Your makeup class policy..."
@@ -130,8 +119,8 @@ export default function PoliciesForm({ initial, isLive }: Props) {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Commitment Terms</label>
               <textarea
-                value={commitmentTerms}
-                onChange={(e) => setCommitmentTerms(e.target.value)}
+                value={form.commitment_terms}
+                onChange={(e) => updateField('commitment_terms', e.target.value)}
                 rows={2}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-gray-400 focus:border-gray-400 outline-none"
                 placeholder="Minimum commitment period, if any..."
@@ -141,8 +130,8 @@ export default function PoliciesForm({ initial, isLive }: Props) {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Notice Period</label>
               <textarea
-                value={noticePeriodTerms}
-                onChange={(e) => setNoticePeriodTerms(e.target.value)}
+                value={form.notice_period_terms}
+                onChange={(e) => updateField('notice_period_terms', e.target.value)}
                 rows={2}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-gray-400 focus:border-gray-400 outline-none"
                 placeholder="Notice required to withdraw..."
@@ -152,8 +141,8 @@ export default function PoliciesForm({ initial, isLive }: Props) {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Payment Terms</label>
               <textarea
-                value={paymentTerms}
-                onChange={(e) => setPaymentTerms(e.target.value)}
+                value={form.payment_terms}
+                onChange={(e) => updateField('payment_terms', e.target.value)}
                 rows={2}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-gray-400 focus:border-gray-400 outline-none"
                 placeholder="Payment frequency, methods accepted..."
@@ -163,8 +152,8 @@ export default function PoliciesForm({ initial, isLive }: Props) {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Other Policies</label>
               <textarea
-                value={otherPolicies}
-                onChange={(e) => setOtherPolicies(e.target.value)}
+                value={form.other_policies}
+                onChange={(e) => updateField('other_policies', e.target.value)}
                 rows={2}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-gray-400 focus:border-gray-400 outline-none"
                 placeholder="Any other policies parents should know..."
