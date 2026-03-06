@@ -266,6 +266,7 @@ export default function AddCentreForm({
       age_min: s.age_min,
       age_max: s.age_max,
       custom_level: s.custom_level,
+      stream: s.stream,
       date: s.date,
       start_time: s.start_time,
       end_time: s.end_time,

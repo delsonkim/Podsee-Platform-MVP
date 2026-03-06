@@ -2,15 +2,12 @@
 
 import { useState, useTransition, useMemo } from 'react'
 import SlotUploader, { type ParsedSlot } from '@/components/SlotUploader'
-import PricingStep, { extractPricingPairs, type PricingEntry } from '@/components/PricingStep'
 import {
   parseSchedule,
   parseScheduleImage,
   createCustomSubject,
   addDraftSlots,
   addSingleDraftSlot,
-  saveCentrePricing,
-  fetchCentrePricing,
   saveParseCorrections,
   type DraftSlotInput,
 } from './actions'
@@ -54,10 +51,6 @@ export default function AddSlotSection({
   const [notes, setNotes] = useState('')
   const [stream, setStream] = useState('')
 
-  // ── Bulk import pricing step state ──
-  const [pendingBulkSlots, setPendingBulkSlots] = useState<ParsedSlot[] | null>(null)
-  const [existingPricing, setExistingPricing] = useState<{ subject_id: string; level_id: string | null; stream: string | null; trial_fee: number; monthly_fee: number }[]>([])
-  const [pricingSaving, setPricingSaving] = useState(false)
 
   function resetSingleForm() {
     setSubjectId('')
@@ -71,43 +64,12 @@ export default function AddSlotSection({
     setNotes('')
   }
 
-  // ── Bulk import handler — show pricing step instead of submitting immediately ──
-  async function handleBulkReady(slots: ParsedSlot[]) {
+  // ── Bulk import handler ──
+  function handleBulkReady(slots: ParsedSlot[]) {
     setError(null)
     setSuccess(null)
-    // Fetch existing pricing so PricingStep can pre-fill
-    const existing = await fetchCentrePricing()
-    setExistingPricing(existing)
-    setPendingBulkSlots(slots)
-  }
-
-  // ── Pricing confirmed — save pricing, auto-fill fees, then add slots ──
-  async function handleBulkPricingConfirm(entries: PricingEntry[]) {
-    if (!pendingBulkSlots) return
-    setPricingSaving(true)
-    setError(null)
-
-    const parsed = entries.map((e) => ({
-      subject_id: e.subject_id,
-      level_id: e.level_id,
-      stream: e.stream,
-      trial_fee: e.trial_fee ? parseFloat(e.trial_fee) : 0,
-      monthly_fee: parseFloat(e.monthly_fee),
-    }))
-
-    const pricingResult = await saveCentrePricing(parsed)
-    if ('error' in pricingResult) {
-      setPricingSaving(false)
-      setError(pricingResult.error)
-      return
-    }
-
-    // Auto-fill trial fees into slots
-    const feeMap = new Map(parsed.map((p) => [`${p.subject_id}|${p.level_id ?? ''}|${p.stream ?? ''}`, p.trial_fee]))
-    const draftSlots: DraftSlotInput[] = pendingBulkSlots.map((s) => {
-      const key = `${s.subject_id}|${s.level_id ?? ''}|${s.stream ?? ''}`
-      const fee = feeMap.get(key)
-      return {
+    startTransition(async () => {
+      const draftSlots: DraftSlotInput[] = slots.map((s) => ({
         subject_id: s.subject_id,
         level_id: s.level_id,
         age_min: s.age_min,
@@ -117,20 +79,17 @@ export default function AddSlotSection({
         date: s.date,
         start_time: s.start_time,
         end_time: s.end_time,
-        trial_fee: fee !== undefined && fee > 0 ? fee : s.trial_fee,
+        trial_fee: s.trial_fee,
         max_students: s.max_students,
         notes: s.notes,
+      }))
+      const result = await addDraftSlots(draftSlots)
+      if ('error' in result) {
+        setError(result.error)
+      } else {
+        setSuccess(`${result.count} slot${result.count !== 1 ? 's' : ''} submitted for review.`)
       }
     })
-
-    const result = await addDraftSlots(draftSlots)
-    setPricingSaving(false)
-    setPendingBulkSlots(null)
-    if ('error' in result) {
-      setError(result.error)
-    } else {
-      setSuccess(`${result.count} slot${result.count !== 1 ? 's' : ''} submitted for review.`)
-    }
   }
 
   // ── Single slot handler ──
@@ -214,8 +173,8 @@ export default function AddSlotSection({
         </button>
       </div>
 
-      {/* Bulk import: SlotUploader → PricingStep */}
-      {mode === 'bulk' && !pendingBulkSlots && (
+      {/* Bulk import */}
+      {mode === 'bulk' && (
         <SlotUploader
           subjects={subjects}
           levels={levels}
@@ -226,34 +185,6 @@ export default function AddSlotSection({
           createCustomSubjectFn={createCustomSubject}
           saveCorrectionsFn={saveParseCorrections}
         />
-      )}
-
-      {mode === 'bulk' && pendingBulkSlots && (
-        <div className="space-y-3">
-          <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-            <p className="text-sm text-green-700 font-medium">
-              {pendingBulkSlots.length} slot{pendingBulkSlots.length !== 1 ? 's' : ''} confirmed — set pricing below
-            </p>
-            <button
-              type="button"
-              onClick={() => setPendingBulkSlots(null)}
-              className="text-xs text-green-600 hover:text-green-800 mt-1"
-            >
-              Go back to upload
-            </button>
-          </div>
-          <PricingStep
-            pairs={extractPricingPairs(
-              pendingBulkSlots.filter((s): s is ParsedSlot & { subject_id: string } => s.subject_id !== null),
-              subjects,
-              levels
-            )}
-            existingPricing={existingPricing}
-            onConfirm={handleBulkPricingConfirm}
-            onBack={() => setPendingBulkSlots(null)}
-            saving={pricingSaving}
-          />
-        </div>
       )}
 
       {/* Single slot form */}

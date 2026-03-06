@@ -104,6 +104,7 @@ export interface TrialSlot {
   age_min: number | null
   age_max: number | null
   custom_level: string | null
+  stream: string | null
   date: string
   start_time: string
   end_time: string
@@ -249,4 +250,19 @@ export const REWARD_STATUS_COLOR: Record<RewardStatus, string> = {
   approved: 'bg-blue-100 text-blue-800',
   paid: 'bg-green-100 text-green-800',
   rejected: 'bg-red-100 text-red-800',
+}
+
+// ── FSBB Stream display helpers ─────────────────────────────────
+
+const STREAM_DISPLAY: Record<string, { label: string; shortLabel: string; color: string }> = {
+  G3: { label: 'G3 (Express)', shortLabel: 'G3', color: 'bg-blue-100 text-blue-800' },
+  G2: { label: 'G2 (Normal Academic)', shortLabel: 'G2', color: 'bg-emerald-100 text-emerald-800' },
+  G1: { label: 'G1 (Foundational)', shortLabel: 'G1', color: 'bg-amber-100 text-amber-800' },
+  IP: { label: 'IP', shortLabel: 'IP', color: 'bg-purple-100 text-purple-800' },
+  IB: { label: 'IB', shortLabel: 'IB', color: 'bg-indigo-100 text-indigo-800' },
+}
+
+export function getStreamDisplay(stream: string | null): { label: string; shortLabel: string; color: string } | null {
+  if (!stream) return null
+  return STREAM_DISPLAY[stream] ?? { label: stream, shortLabel: stream, color: 'bg-gray-100 text-gray-800' }
 }

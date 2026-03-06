@@ -32,6 +32,7 @@ export interface TrialSlotInput {
   age_min: number | null
   age_max: number | null
   custom_level: string | null
+  stream: string | null
   date: string
   start_time: string
   end_time: string
@@ -221,6 +222,7 @@ export async function addSlotsForCentre(
       age_min: slot.age_min,
       age_max: slot.age_max,
       custom_level: slot.custom_level,
+      stream: slot.stream || null,
       date: slot.date,
       start_time: slot.start_time,
       end_time: slot.end_time,
@@ -465,6 +467,7 @@ export async function createCentre(formPayload: {
         age_min: slot.age_min,
         age_max: slot.age_max,
         custom_level: slot.custom_level,
+        stream: slot.stream || null,
         date: slot.date,
         start_time: slot.start_time,
         end_time: slot.end_time,
