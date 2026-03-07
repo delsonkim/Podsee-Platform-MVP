@@ -7,6 +7,16 @@ import { sendCentreInvite } from '@/lib/email'
 import { parseScheduleWithAI, parseScheduleImageWithAI } from '@/lib/ai-parser'
 import type { AIParseResult } from '@/types/ai-parser'
 import { fetchCorrections, saveCorrections, type CorrectionInput } from '@/lib/parse-corrections'
+import { standardizePolicies, standardizePoliciesFromImage } from '@/lib/ai-standardizer'
+import type { PolicyStandardizeResult, FileMediaType, SubjectLevelPair } from '@/lib/ai-standardizer'
+import {
+  savePricingRows,
+  savePolicies,
+  getSubjectLevelPairs,
+  getPricingRows,
+  getPolicies,
+  autoFillSlotTrialFees,
+} from '@/lib/pricing-policies-actions'
 
 function slugify(text: string): string {
   return text
@@ -582,6 +592,92 @@ export async function parseScheduleImage(
 
 export async function saveParseCorrections(corrections: CorrectionInput[]): Promise<void> {
   await saveCorrections(corrections)
+}
+
+// ── Pricing & Policies server actions ──────────────────────────
+
+export async function fetchSubjectLevelPairsAction(
+  centreId: string
+): Promise<SubjectLevelPair[]> {
+  const supabase = createAdminClient()
+  return getSubjectLevelPairs(supabase, centreId)
+}
+
+export async function standardizePoliciesAction(
+  rawText: string
+): Promise<PolicyStandardizeResult> {
+  return standardizePolicies(rawText)
+}
+
+export async function savePricingAction(
+  centreId: string,
+  data: {
+    pricing: Parameters<typeof savePricingRows>[2]
+    promotionsText: string | null
+    additionalFees: string | null
+    billingRaw: string | null
+  }
+): Promise<{ success: true } | { error: string }> {
+  const supabase = createAdminClient()
+
+  const pricingResult = await savePricingRows(supabase, centreId, data.pricing, data.additionalFees, data.billingRaw)
+  if ('error' in pricingResult) return pricingResult
+
+  // Auto-fill trial_fee on matching slots
+  if (data.pricing.length > 0) {
+    await autoFillSlotTrialFees(supabase, centreId, data.pricing)
+  }
+
+  // Save promotions_text directly on centres table
+  const { error: promoError } = await supabase
+    .from('centres')
+    .update({ promotions_text: data.promotionsText })
+    .eq('id', centreId)
+  if (promoError) return { error: promoError.message }
+
+  revalidatePath('/admin/centres')
+  return { success: true }
+}
+
+export async function savePoliciesAction(
+  centreId: string,
+  policies: Parameters<typeof savePolicies>[2]
+): Promise<{ success: true } | { error: string }> {
+  const supabase = createAdminClient()
+  const result = await savePolicies(supabase, centreId, policies)
+  if ('error' in result) return result
+
+  revalidatePath('/admin/centres')
+  return { success: true }
+}
+
+export async function standardizePoliciesImageAction(
+  base64Data: string,
+  mediaType: FileMediaType
+): Promise<PolicyStandardizeResult> {
+  return standardizePoliciesFromImage(base64Data, mediaType)
+}
+
+export async function loadPricingDataAction(centreId: string) {
+  const supabase = createAdminClient()
+  const [pricing, policies, pairs] = await Promise.all([
+    getPricingRows(supabase, centreId),
+    getPolicies(supabase, centreId),
+    getSubjectLevelPairs(supabase, centreId),
+  ])
+  const { data: centre } = await supabase
+    .from('centres')
+    .select('additional_fees, promotions_text')
+    .eq('id', centreId)
+    .single()
+
+  return {
+    pricing,
+    policies,
+    pairs,
+    additionalFees: centre?.additional_fees ?? null,
+    promotionsText: centre?.promotions_text ?? null,
+  }
 }
 
 export async function createCustomSubject(

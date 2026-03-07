@@ -1,6 +1,7 @@
 import { requireCentreUser } from '@/lib/centre-auth'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getStreamDisplay } from '@/types/database'
+import { getCentrePricing } from '@/lib/public-data'
 import AddSlotSection from './AddSlotSection'
 
 function formatDate(d: string) {
@@ -128,6 +129,8 @@ export default async function CentreSlotsPage() {
   const supabase = createAdminClient()
   const today = new Date().toISOString().split('T')[0]
 
+  const pricingRows = await getCentrePricing(centreId)
+
   const [{ data: upcoming }, { data: past }, { data: drafts }, { data: subjects }, { data: levels }] = await Promise.all([
     supabase
       .from('trial_slots')
@@ -172,7 +175,7 @@ export default async function CentreSlotsPage() {
       <div>
         <h2 className="text-base font-semibold text-gray-900 mb-3">Add New Slots</h2>
         <div className="bg-white border border-gray-200 rounded-xl p-5">
-          <AddSlotSection subjects={subjects ?? []} levels={levels ?? []} centreId={centreId} />
+          <AddSlotSection subjects={subjects ?? []} levels={levels ?? []} centreId={centreId} pricingRows={pricingRows} />
         </div>
       </div>
 

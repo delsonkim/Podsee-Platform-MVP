@@ -1,9 +1,10 @@
-import { getCentreBySlug } from '@/lib/public-data'
+import { getCentreBySlug, getCentrePricing, getCentrePolicies } from '@/lib/public-data'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
 import CentreSlots from './CentreSlots'
 import ExpandableText from './ExpandableText'
+import PricingTable from './PricingTable'
 
 export const revalidate = 60
 
@@ -63,18 +64,26 @@ export default async function CentreProfilePage({
   const centre = await getCentreBySlug(slug)
   if (!centre) notFound()
 
+  const [pricingRows, structuredPolicies] = await Promise.all([
+    getCentrePricing(centre.id),
+    getCentrePolicies(centre.id),
+  ])
+
   const minFee =
     centre.slots.length > 0
       ? Math.min(...centre.slots.map((s) => Number(s.trial_fee)))
       : null
 
-  const hasPolicies =
+  // Legacy policy fallback (old centre fields)
+  const hasLegacyPolicies =
     centre.replacement_class_policy ||
     centre.makeup_class_policy ||
     centre.commitment_terms ||
     centre.notice_period_terms ||
     centre.payment_terms ||
     centre.other_policies
+
+  const hasPolicies = structuredPolicies.length > 0 || hasLegacyPolicies
 
   const hasPractical = centre.address || centre.nearest_mrt || centre.parking_info
 
@@ -217,6 +226,13 @@ export default async function CentreProfilePage({
             </div>
           )}
 
+          {/* Pricing & Promotions */}
+          <PricingTable
+            rows={pricingRows}
+            promotionsText={centre.promotions_text}
+            additionalFees={centre.additional_fees}
+          />
+
           {/* Reviews */}
           {centre.reviews.length > 0 && (
             <section className="px-6 py-6 border-b border-linen bg-white">
@@ -331,15 +347,24 @@ export default async function CentreProfilePage({
             </p>
             {hasPolicies ? (
               <div className="bg-white border border-linen rounded-xl px-4">
-                {minFee !== null && (
-                  <PolicyAccordion title="Trial Policy" body={`S$${minFee} for one trial class.`} />
+                {/* Structured policies from centre_policies table */}
+                {structuredPolicies.map((policy) => (
+                  <PolicyAccordion key={policy.id} title={policy.category} body={policy.description} />
+                ))}
+                {/* Legacy fallback: old centre fields (shown only if no structured policies) */}
+                {structuredPolicies.length === 0 && (
+                  <>
+                    {minFee !== null && (
+                      <PolicyAccordion title="Trial Policy" body={`S$${minFee} for one trial class.`} />
+                    )}
+                    <PolicyAccordion title="Replacement Class" body={centre.replacement_class_policy} />
+                    <PolicyAccordion title="Makeup Class" body={centre.makeup_class_policy} />
+                    <PolicyAccordion title="Commitment Terms" body={centre.commitment_terms} />
+                    <PolicyAccordion title="Notice Period" body={centre.notice_period_terms} />
+                    <PolicyAccordion title="Payment" body={centre.payment_terms} />
+                    <PolicyAccordion title="Other Policies" body={centre.other_policies} />
+                  </>
                 )}
-                <PolicyAccordion title="Replacement Class" body={centre.replacement_class_policy} />
-                <PolicyAccordion title="Makeup Class" body={centre.makeup_class_policy} />
-                <PolicyAccordion title="Commitment Terms" body={centre.commitment_terms} />
-                <PolicyAccordion title="Notice Period" body={centre.notice_period_terms} />
-                <PolicyAccordion title="Payment" body={centre.payment_terms} />
-                <PolicyAccordion title="Other Policies" body={centre.other_policies} />
               </div>
             ) : (
               <div className="bg-white border border-linen border-dashed rounded-xl p-6 text-center">

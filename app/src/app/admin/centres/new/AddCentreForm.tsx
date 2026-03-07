@@ -11,6 +11,7 @@ import {
 import { uploadCentreImage, uploadPaynowQr } from './image-actions'
 import SlotUploader, { type ParsedSlot } from '@/components/SlotUploader'
 import { parseSchedule, parseScheduleImage, createCustomSubject, saveParseCorrections } from './actions'
+import PricingPolicyStep from './PricingPolicyStep'
 
 interface Subject {
   id: string
@@ -30,8 +31,8 @@ const STEPS = [
   'Basic Info',
   'About',
   'Team',
-  'Policies',
   'Schedule',
+  'Pricing & Policies',
 ]
 
 const STUDENT_TYPES = [
@@ -96,15 +97,7 @@ export default function AddCentreForm({
     { ...emptyTeacher, is_founder: true, role: 'Founder' },
   ])
 
-  // Step 4: Policies
-  const [replacementPolicy, setReplacementPolicy] = useState('')
-  const [makeupPolicy, setMakeupPolicy] = useState('')
-  const [commitmentTerms, setCommitmentTerms] = useState('')
-  const [noticePeriod, setNoticePeriod] = useState('')
-  const [paymentTerms, setPaymentTerms] = useState('')
-  const [otherPolicies, setOtherPolicies] = useState('')
-
-  // Step 5: Schedule (required)
+  // Step 4: Schedule (required)
   const [importedSlots, setImportedSlots] = useState<ParsedSlot[]>([])
 
   // ── Handlers ──────────────────────────────────────────────
@@ -236,27 +229,13 @@ export default function AddCentreForm({
         return
       }
 
-      // Step 4: Policies
-      if (step === 3) {
-        const result = await updateCentreStep(centreId, {
-          replacement_class_policy: replacementPolicy.trim(),
-          makeup_class_policy: makeupPolicy.trim(),
-          commitment_terms: commitmentTerms.trim(),
-          notice_period_terms: noticePeriod.trim(),
-          payment_terms: paymentTerms.trim(),
-          other_policies: otherPolicies.trim(),
-        })
-        if ('error' in result) { setError(result.error); return }
-        setStep((s) => s + 1)
-        return
-      }
     } finally {
       setStepSaving(false)
     }
   }
 
-  // Step 5: Final — add slots and redirect
-  function handleFinish() {
+  // Step 4: Save slots and advance to Pricing & Policies
+  function handleSaveSlots() {
     setError(null)
     if (!centreId) { setError('Centre not created yet.'); return }
 
@@ -281,8 +260,7 @@ export default function AddCentreForm({
       if ('error' in result) {
         setError(result.error)
       } else {
-        // Redirect to admin centres list
-        window.location.href = '/admin/centres'
+        setStep((s) => s + 1) // Advance to Pricing & Policies step
       }
     })
   }
@@ -294,14 +272,13 @@ export default function AddCentreForm({
         {STEPS.map((label, i) => (
           <button
             key={label}
-            onClick={() => i < step && setStep(i)}
-            disabled={i > step}
+            onClick={() => i !== step && setStep(i)}
             className={`flex items-center gap-1.5 text-xs font-medium transition-colors shrink-0 ${
               i === step
                 ? 'text-gray-900'
                 : i < step
                 ? 'text-blue-600 hover:text-blue-700 cursor-pointer'
-                : 'text-gray-300'
+                : 'text-gray-400 hover:text-gray-600 cursor-pointer'
             }`}
           >
             <span
@@ -733,81 +710,8 @@ export default function AddCentreForm({
           </div>
         )}
 
-        {/* ── Step 4: Policies ───────────────────────────────────── */}
+        {/* ── Step 4: Schedule (required) ──────────────────────── */}
         {step === 3 && (
-          <div className="space-y-5">
-            <div>
-              <h2 className="text-lg font-bold text-gray-900">Policies</h2>
-              <p className="text-sm text-gray-500 mt-1">Parents always ask about these — fill in what you can.</p>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Replacement Class Policy</label>
-              <textarea
-                value={replacementPolicy}
-                onChange={(e) => setReplacementPolicy(e.target.value)}
-                rows={2}
-                placeholder="e.g. Free replacement class if cancelled 24 hours in advance"
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Makeup Class Policy</label>
-              <textarea
-                value={makeupPolicy}
-                onChange={(e) => setMakeupPolicy(e.target.value)}
-                rows={2}
-                placeholder="e.g. 1 makeup class per month, must be used within the same month"
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Commitment Terms</label>
-              <textarea
-                value={commitmentTerms}
-                onChange={(e) => setCommitmentTerms(e.target.value)}
-                rows={2}
-                placeholder="e.g. Month-to-month, no lock-in contract"
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Notice Period</label>
-              <textarea
-                value={noticePeriod}
-                onChange={(e) => setNoticePeriod(e.target.value)}
-                rows={2}
-                placeholder="e.g. 1 month notice required to withdraw"
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Payment Terms</label>
-              <textarea
-                value={paymentTerms}
-                onChange={(e) => setPaymentTerms(e.target.value)}
-                rows={2}
-                placeholder="e.g. PayNow or bank transfer before the start of each month"
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Other Policies <span className="text-gray-400 font-normal">(anything else)</span>
-              </label>
-              <textarea
-                value={otherPolicies}
-                onChange={(e) => setOtherPolicies(e.target.value)}
-                rows={3}
-                placeholder="Any other policies or important info parents should know (e.g. late arrival, sibling discounts, attire, trial-to-enrolment process)"
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400"
-              />
-            </div>
-          </div>
-        )}
-
-        {/* ── Step 5: Schedule (required) ──────────────────────── */}
-        {step === 4 && (
           <div className="space-y-5">
             <div>
               <h2 className="text-lg font-bold text-gray-900">Trial Slot Schedule</h2>
@@ -845,6 +749,16 @@ export default function AddCentreForm({
             )}
           </div>
         )}
+
+        {/* ── Step 5: Pricing & Policies ─────────────────────── */}
+        {step === 4 && (
+          <PricingPolicyStep
+            centreId={centreId ?? undefined}
+            onComplete={() => {
+              window.location.href = '/admin/centres'
+            }}
+          />
+        )}
       </div>
 
       {/* Navigation buttons */}
@@ -863,10 +777,11 @@ export default function AddCentreForm({
         </button>
 
         <div className="flex items-center gap-3">
-          {step === STEPS.length - 1 && (
+          {/* Schedule step: save slots and advance to Pricing & Policies */}
+          {step === 3 && (
             <button
               type="button"
-              onClick={handleFinish}
+              onClick={handleSaveSlots}
               disabled={isPending || !hasValidSlots || !centreId}
               className={`text-sm font-medium px-6 py-2.5 rounded-lg transition-colors ${
                 isPending
@@ -876,11 +791,14 @@ export default function AddCentreForm({
                   : 'bg-gray-200 text-gray-400 cursor-not-allowed'
               }`}
             >
-              {isPending ? 'Saving slots...' : 'Finish & Add Slots'}
+              {isPending ? 'Saving slots...' : 'Save Slots & Continue'}
             </button>
           )}
 
-          {step < STEPS.length - 1 && (
+          {/* Pricing & Policies (4) step handles its own buttons */}
+
+          {/* Steps 0-2: normal Next button */}
+          {step < 3 && (
             <button
               type="button"
               onClick={handleNext}

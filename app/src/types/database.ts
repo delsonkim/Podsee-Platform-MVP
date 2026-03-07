@@ -7,6 +7,7 @@ export type ReviewStatus = 'pending_approval' | 'approved' | 'rejected'
 export type LevelGroup = 'primary' | 'secondary' | 'jc' | 'other'
 export type CentreUserRole = 'owner' | 'staff'
 export type AdminUserRole = 'admin' | 'superadmin'
+export type TrialType = 'free' | 'discounted' | 'same_as_regular' | 'multi_lesson'
 
 export interface Subject {
   id: string
@@ -70,6 +71,8 @@ export interface Centre {
   paynow_qr_image_url: string | null
   trial_commission_rate: number
   conversion_commission_rate: number
+  additional_fees: string | null
+  promotions_text: string | null
   draft_data: Record<string, unknown> | null
   has_pending_changes: boolean
   is_active: boolean
@@ -200,6 +203,37 @@ export interface Reward {
   notes: string | null
   created_at: string
   updated_at: string
+}
+
+// ── Section 8: Pricing, Promotions, Policies ───────────────────
+
+export interface CentrePricing {
+  id: string
+  centre_id: string
+  subject_id: string
+  level_id: string | null
+  stream: string | null
+  trial_type: TrialType
+  trial_fee: number
+  trial_lessons: number
+  regular_fee: number
+  lessons_per_period: number | null
+  billing_display: string | null
+  billing_raw: string | null
+  lesson_duration_minutes: number | null
+  trial_same_as_regular: boolean
+  regular_schedule_note: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface CentrePolicy {
+  id: string
+  centre_id: string
+  category: string
+  description: string
+  sort_order: number
+  created_at: string
 }
 
 // ── Status display helpers ─────────────────────────────────────

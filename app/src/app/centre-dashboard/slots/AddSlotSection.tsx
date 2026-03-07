@@ -2,6 +2,7 @@
 
 import { useState, useTransition, useMemo } from 'react'
 import SlotUploader, { type ParsedSlot } from '@/components/SlotUploader'
+import type { CentrePricing } from '@/types/database'
 import {
   parseSchedule,
   parseScheduleImage,
@@ -26,14 +27,38 @@ interface Level {
   sort_order: number
 }
 
+type PricingRow = CentrePricing & { subject_name: string; level_label: string | null }
+
+function getTrialFeeFromPricing(row: PricingRow): number {
+  switch (row.trial_type) {
+    case 'free': return 0
+    case 'same_as_regular': return row.regular_fee
+    case 'discounted':
+    case 'multi_lesson': return row.trial_fee
+    default: return 0
+  }
+}
+
+function getTrialFeeHint(row: PricingRow): string {
+  switch (row.trial_type) {
+    case 'free': return 'Free trial (from your pricing)'
+    case 'same_as_regular': return `S$${row.regular_fee} — same as regular (from your pricing)`
+    case 'discounted': return `S$${row.trial_fee} — discounted trial (from your pricing)`
+    case 'multi_lesson': return `S$${row.trial_fee} — multi-lesson trial (from your pricing)`
+    default: return ''
+  }
+}
+
 export default function AddSlotSection({
   subjects,
   levels,
   centreId,
+  pricingRows,
 }: {
   subjects: Subject[]
   levels: Level[]
   centreId: string
+  pricingRows: PricingRow[]
 }) {
   const [mode, setMode] = useState<'bulk' | 'single'>('bulk')
   const [success, setSuccess] = useState<string | null>(null)
@@ -47,9 +72,35 @@ export default function AddSlotSection({
   const [startTime, setStartTime] = useState('')
   const [endTime, setEndTime] = useState('')
   const [trialFee, setTrialFee] = useState('')
+  const [trialFeeHint, setTrialFeeHint] = useState<string | null>(null)
   const [maxStudents, setMaxStudents] = useState('4')
   const [notes, setNotes] = useState('')
   const [stream, setStream] = useState('')
+
+  // ── Auto-fill trial fee from pricing ──
+  function lookupAndFillTrialFee(sid: string, lid: string) {
+    if (!sid) { setTrialFeeHint(null); return }
+    const match = pricingRows.find(
+      (r) => r.subject_id === sid && (r.level_id === (lid || null))
+    )
+    if (match) {
+      const fee = getTrialFeeFromPricing(match)
+      setTrialFee(fee === 0 ? '0' : String(fee))
+      setTrialFeeHint(getTrialFeeHint(match))
+    } else {
+      setTrialFeeHint(null)
+    }
+  }
+
+  function handleSubjectChange(sid: string) {
+    setSubjectId(sid)
+    lookupAndFillTrialFee(sid, levelId)
+  }
+
+  function handleLevelChange(lid: string) {
+    setLevelId(lid)
+    lookupAndFillTrialFee(subjectId, lid)
+  }
 
 
   function resetSingleForm() {
@@ -60,6 +111,7 @@ export default function AddSlotSection({
     setStartTime('')
     setEndTime('')
     setTrialFee('')
+    setTrialFeeHint(null)
     setMaxStudents('4')
     setNotes('')
   }
@@ -197,7 +249,7 @@ export default function AddSlotSection({
               </label>
               <select
                 value={subjectId}
-                onChange={(e) => setSubjectId(e.target.value)}
+                onChange={(e) => handleSubjectChange(e.target.value)}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400"
               >
                 <option value="">Select subject...</option>
@@ -210,7 +262,7 @@ export default function AddSlotSection({
               <label className="block text-sm font-medium text-gray-700 mb-1">Level</label>
               <select
                 value={levelId}
-                onChange={(e) => setLevelId(e.target.value)}
+                onChange={(e) => handleLevelChange(e.target.value)}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400"
               >
                 <option value="">Select level...</option>
@@ -283,10 +335,13 @@ export default function AddSlotSection({
                 min="0"
                 step="0.01"
                 value={trialFee}
-                onChange={(e) => setTrialFee(e.target.value)}
+                onChange={(e) => { setTrialFee(e.target.value); setTrialFeeHint(null) }}
                 placeholder="0"
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400"
               />
+              {trialFeeHint && (
+                <p className="text-xs text-green-600 mt-1">{trialFeeHint}</p>
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Max Students</label>

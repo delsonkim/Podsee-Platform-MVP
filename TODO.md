@@ -16,6 +16,7 @@ The Podsee Platform MVP has a working public booking flow (browse centres → bo
 | 5 | AI parsing layer | Onboarding blocker — can't ask centres to reformat their data | Done |
 | 6 | UI polish (centre detail + booking flow) | Parent experience — existing flow works for now | Done |
 | 7 | Parent ↔ Centre booking flow (redesigned) | Core platform functionality — parents/centres need self-service | Next |
+| 8 | Decouple trial slots from class schedule | Booking accuracy — not all class days accept trials | Planned |
 
 ---
 
@@ -786,38 +787,50 @@ All emails include booking reference code (PSE-YYMMDD-XXXX), warm early-adopter 
 
 ---
 
-## 8. Structured Pricing (Per Subject + Level)
+## 8. Structured Pricing, Promotions & Policies
 
-**Problem**: Trial fees and monthly fees vary by subject and level. A centre might charge S$10 trial for P3 Math but S$20 for Sec 2 Science. Currently trial_fee is set per slot during upload, but there's no way to show a pricing overview or auto-fill fees.
+**Problem**: Trial fees and regular fees vary by subject, level, and billing model. A centre might charge S$10 trial for P3 Math but S$20 for Sec 2 Science. Billing models range from per-lesson to monthly to termly to package-based. Centres also have complex policies written in wildly different formats. Currently trial_fee is set per slot during upload, but there's no structured pricing overview, no promotions system, and no standardised policies.
 
-**Approach**: After the AI parser identifies subjects + levels from the schedule, prompt the centre to fill in pricing for each unique subject+level pair. Store in a dedicated `centre_pricing` table. Show structured pricing on the public centre profile.
+**Approach**: Admin types pricing/policy info as free text → AI standardises into structured data → admin reviews and edits. Store in dedicated `centre_pricing`, `centre_promotions`, and `centre_policies` tables. Show structured pricing and policies on the public centre profile.
 
 ### Flow
 1. Centre uploads schedule → AI parser extracts slots with subjects + levels
 2. Centre reviews/corrects parsed slots in clarification table
-3. **NEW**: After slots confirmed, extract unique subject+level pairs and show a pricing table for the centre to fill in trial fee + monthly fee per pair
-4. Trial fees auto-populate into the parsed slots
-5. Monthly fees stored for display on public profile
+3. **Pricing**: Admin pastes/types raw pricing text → AI standardises into structured pricing rows, extracts promotions and additional fees → admin reviews/edits in table form
+4. **Policies**: Admin pastes/types raw T&C text → AI categorises into standard policy categories with clean formatting → admin reviews/edits
+5. Trial fees auto-populate into the parsed slots
+6. Regular fees + billing display stored for public profile
 
-### Schema
+### Schema (see migration: `supabase/migrations/20260307000001_centre_pricing_promotions_policies.sql`)
 ```sql
-CREATE TABLE centre_pricing (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  centre_id UUID NOT NULL REFERENCES centres(id) ON DELETE CASCADE,
-  subject_id UUID NOT NULL REFERENCES subjects(id),
-  level_id UUID REFERENCES levels(id),
-  stream TEXT,
-  trial_fee NUMERIC(8,2) NOT NULL DEFAULT 0,
-  monthly_fee NUMERIC(8,2),
-  created_at TIMESTAMPTZ DEFAULT now(),
-  updated_at TIMESTAMPTZ DEFAULT now(),
-  UNIQUE(centre_id, subject_id, level_id, stream)
-);
+-- centre_pricing: one row per subject+level+stream combo per centre
+-- Supports: per-lesson, monthly, termly, package, flat-rate billing
+-- Fields: trial_type (free/discounted/same_as_regular/multi_lesson), trial_fee, trial_lessons,
+--         regular_fee, lessons_per_period, billing_display (AI-generated), billing_raw (original text),
+--         lesson_duration_minutes, trial_same_as_regular, regular_schedule_note
+
+-- centre_promotions: flexible promo cards with optional subject/level tags
+-- Fields: title, description, discount_type (nullable), discount_value,
+--         applies_to (trial/registration/monthly/materials/all), subject_id, level_id,
+--         valid_from, valid_until, is_active
+
+-- centre_policies: AI-categorised policies (replaces 5 fixed text columns on centres)
+-- Fields: category, description, sort_order
+-- Standard categories: Fees & Payment, Refund Policy, Replacement & Make-Up Classes,
+--   Withdrawal & Notice Period, Class Schedule & Public Holidays, Attendance & Conduct,
+--   Materials & Resources (+ dynamic extras for unique policies)
+
+-- Also: ALTER TABLE centres ADD COLUMN additional_fees TEXT
 ```
 
 ### Confirmed Decisions
-- monthly_fee is **required** (NOT NULL)
-- AI parser: do NOT touch — user is working on it separately
+- Billing model: AI standardisation (no dropdown) — admin types freely → AI structures + generates uniform `billing_display` text → admin reviews/edits
+- Trial types: `free`, `discounted`, `same_as_regular`, `multi_lesson` — per subject+level
+- Multi-lesson trial: 1 booking covers N regular lessons (e.g. 4-lesson trial pack)
+- Additional fees: single free-text field on centre level (registration, deposit, materials, extras)
+- Policies: all stored in `centre_policies` table. AI categorises from raw text into standard categories + dynamic extras
+- Promotions: free text description + optional subject/level tags for filtering. Sibling discounts = promotions, sibling rules = policies
+- AI parser (schedule): do NOT touch — working separately
 - Pricing is editable standalone from the centre dashboard at any time
 
 ### Tasks
@@ -827,63 +840,56 @@ CREATE TABLE centre_pricing (
 - [x] Remove pricing_info from ProfileForm, AdminEditForms, AddCentreForm, centre-info actions/page, admin centre edit page, public centre profile
 - [x] Delete migration file `20260306000002_add_pricing_info.sql`
 
-#### Schema + Types
-- [x] Migration: create `centre_pricing` table + `centre_promotions` table
-- [x] TypeScript types: add `CentrePricing` + `CentrePromotion` interfaces to database.ts
+#### Schema + Types + AI Standardiser
+- [x] Migration: create `centre_pricing`, `centre_policies` tables + ALTER centres (`additional_fees`, `promotions_text`)
+- [x] TypeScript types: `CentrePricing`, `CentrePolicy` interfaces + `TrialType` type alias + update `Centre` interface
+- [x] AI policy standardiser (`app/src/lib/ai-standardizer.ts`) — `standardizePolicies(rawText)` → categorised policies with standardised formatting
+- [x] Collapsed `centre_promotions` table into `promotions_text` TEXT column on `centres` (simpler, no unused columns)
 
-#### Pricing Step Component
-- [x] New `PricingStep.tsx` component — table of subject+level pairs with trial_fee + monthly_fee inputs
-- [x] Server action: `saveCentrePricing(centreId, pricings[])` — upsert into centre_pricing
+#### PricingPolicyStep Component (combined)
+- [x] `PricingPolicyStep.tsx` — manual pricing form (pre-filled from schedule subject+level pairs) + AI policy extraction
+- [x] Server actions: `savePricingAction`, `savePoliciesAction`, `loadPricingDataAction` in `actions.ts`
+- [x] CRUD helpers: `savePricingRows`, `savePolicies`, `getPricingRows`, `getPolicies` in `pricing-policies-actions.ts`
 - [x] Auto-fill: when pricing saved, update trial_fee on corresponding draft slots
 
 #### Wire into Onboarding (AddCentreForm)
-- [x] After slot clarification confirmed, show PricingStep as Step 5 with unique pairs extracted from parsed slots
-- [x] Save pricing on "Confirm & Finish"
+- [x] PricingPolicyStep shown as Step 6 after slot confirmation
+- [x] Fetches subject+level pairs from schedule step, pre-fills pricing rows
+- [x] Save pricing + promotions_text + policies on "Confirm & Save"
 
 #### Wire into Centre Dashboard (AddSlotSection)
-- [x] After bulk import confirmed, show PricingStep for subject+level pairs (existing pricing pre-filled)
-- [x] Single slot add: trial fee field stays as-is (manual entry)
+- [x] ~~After bulk import confirmed, show PricingStep~~ — Not needed; pricing editor exists on centre-info page + auto-fill on save
+- [x] Single slot add: trial fee auto-fills from centre_pricing when subject+level selected (with green hint)
 
-#### Centre Dashboard Pricing Management
-- [x] Centre-info page: "Pricing" section (view/edit table of all centre_pricing rows, LinkedIn-style toggle)
-- [x] Server actions for standalone pricing edits (`saveCentrePricing`, `fetchCentrePricing`)
-
-#### Centre Dashboard Promotions Management
-- [x] Centre-info page: "Promotions" section (add/pause/delete promotions)
-- [x] Server actions for promotions CRUD (`addPromotion`, `deletePromotion`, `togglePromotion`, `getPromotions`)
+#### Centre Dashboard Pricing/Promotions/Policy Management
+- [x] Centre-info page: "Pricing" section (full CRUD — add/edit/delete rows, all fields editable, saves directly)
+- [x] Centre-info page: "Promotions" section (edit promotions_text textarea)
+- [x] Centre-info page: "Policies" section — view/edit categorised policies (add/edit/delete, category suggestions)
 
 #### Admin
 - [x] Admin centre edit page: pricing section (read-only view of centre_pricing rows)
-- [x] Admin centre edit page: promotions section (read-only view of centre_promotions)
+- [x] Admin centre edit page: promotions section (read-only view of promotions_text)
+- [x] Admin centre edit page: policies section (read-only view of centre_policies rows)
 
 #### Public Display
-- [ ] Public centre profile: structured pricing table grouped by subject, sorted by level
-- [ ] Public centre profile: promotions displayed as highlighted cards/badges
-- [ ] Booking page: show monthly fee from centre_pricing alongside trial fee
+- [x] Public centre profile: structured pricing table grouped by subject with level filter dropdown
+- [x] Public centre profile: promotions displayed as highlighted amber card
+- [x] Public centre profile: policies displayed by category (accordion format, legacy fallback)
+- [x] Booking page: show regular fee + billing display from centre_pricing alongside trial fee
 
 #### Verification
 - [x] `cd app && npx tsc --noEmit` passes
-- [ ] Test: upload schedule → confirm slots → pricing step appears with correct pairs
-- [ ] Test: fill pricing → slots get trial_fee auto-filled → submit
-- [ ] Test: public profile shows pricing table + promotions
+- [x] `cd app && npm run build` passes
+- [ ] Test: policy standardisation — paste raw T&C → AI returns categorised policies → editable list
+- [ ] Test: public profile shows pricing table + promotions + policies
 
-### Promotions Schema
-```sql
-CREATE TABLE centre_promotions (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  centre_id UUID NOT NULL REFERENCES centres(id) ON DELETE CASCADE,
-  title TEXT NOT NULL,
-  description TEXT,
-  discount_type TEXT NOT NULL CHECK (discount_type IN ('percentage', 'flat', 'free')),
-  discount_value NUMERIC(8,2),
-  applies_to TEXT NOT NULL DEFAULT 'monthly_fee'
-    CHECK (applies_to IN ('trial_fee', 'monthly_fee', 'registration', 'materials', 'other')),
-  valid_until DATE,
-  is_active BOOLEAN NOT NULL DEFAULT true,
-  created_at TIMESTAMPTZ DEFAULT now(),
-  updated_at TIMESTAMPTZ DEFAULT now()
-);
-```
+### Files
+| File | Status |
+|------|--------|
+| `supabase/migrations/20260307000001_centre_pricing_promotions_policies.sql` | Done |
+| `app/src/types/database.ts` | Done (types added) |
+| `app/src/lib/ai-standardizer.ts` | Done (billing + policy AI) |
+| `app/src/lib/mock-data.ts` | Done (additional_fees field) |
 
 ---
 
@@ -936,3 +942,217 @@ CREATE TABLE centre_promotions (
 - [ ] Admin centres list: show branch grouping (indent under parent or "4 branches" badge)
 - [ ] Public listing: each branch as own card showing "Brand Name — Branch Name"
 - [ ] Public detail page: "Also at: Clementi, Jurong East, Tampines" banner with links to sibling branches
+
+---
+
+## 11. Centre Profile Enhancement & AI Content Generation
+
+**Goal**: Make it dead simple for centres to have a compelling, professional profile — even if they can't write marketing copy. Combine self-serve editing, AI-powered content generation, and a guided onboarding interview to extract the best from every centre.
+
+---
+
+### 11.1 Make Everything Editable (Close the Gaps)
+
+**Current state**: Most fields are already editable on both admin and centre dashboard. The gaps are around images (admin side) and teacher/founder profiles (both sides).
+
+#### What's already editable (no work needed)
+- Centre dashboard: description, teaching style, track record, class size, years operating, address, area, nearest MRT, parking, all 6 policy fields, centre images (upload/replace/delete), PayNow QR
+- Admin page: all of the above + name, slug, contact email, trial type, commission rates, active/paused/trusted toggles
+
+#### Gaps to close
+
+**Admin edit page — missing:**
+- [ ] Add image management to admin edit page — upload/replace/delete centre photos (currently only possible during creation or from centre dashboard)
+- [ ] Add PayNow QR management to admin edit page — upload/replace/delete
+- [ ] Add teacher/founder profile management to admin edit page — add/edit/remove teachers from the `teachers` table (name, role, is_founder, qualifications, bio, years_experience, subjects)
+
+**Centre dashboard — missing:**
+- [ ] Add teacher/founder profile editing to centre dashboard — centres can add/edit/remove their own team members (name, role, founder flag, qualifications, bio, photo)
+- [ ] Consider adding founder highlight section — if a teacher is marked `is_founder`, show prominently on profile page
+
+**Schema cleanup:**
+- [ ] Deprecate legacy `teacher_bio` and `teacher_qualifications` TEXT columns on centres table — migrate any existing data to the `teachers` table, then drop the columns (or ignore them)
+
+---
+
+### 11.2 AI-Powered Tagline & Description Generator
+
+**Problem**: Centres struggle to write compelling copy. Their websites often have the info but not in the right format. We need AI to help them stand out.
+
+**Approach**: Two entry points — (a) scrape their website URL (already in Section 9) and generate tagline/description, (b) from guided questions during onboarding or editing.
+
+#### Tasks
+- [ ] AI tagline generator — given centre info (name, subjects, area, teaching style, track record), generate 3 tagline options (1-line punchy sentences)
+- [ ] AI description rewriter — take centre's raw description and rewrite it using marketing best practices (see 11.5 below)
+- [ ] "Enhance with AI" button on description/teaching style/track record fields — centre or admin clicks, AI rewrites their draft into polished copy
+- [ ] Website-to-tagline pipeline — when website URL is scraped (Section 9), also generate suggested taglines from website content
+- [ ] Show AI suggestions as editable previews — centre picks their favourite, can tweak before saving
+- [ ] API cost tracking — log each AI call (model, tokens, cost) for billing visibility
+
+#### API Cost Reference
+- [ ] Document API pricing comparison for content generation tasks:
+  - Claude Haiku 4.5: ~$0.80/$4 per 1M tokens (input/output) — best for parsing, fast tasks
+  - Claude Sonnet 4.6: ~$3/$15 per 1M tokens — good for content generation, balanced
+  - Gemini 2.5 Flash: free tier available, ~$0.15/$0.60 per 1M tokens — cheapest option
+  - Gemini 2.5 Pro: ~$1.25/$10 per 1M tokens
+  - OpenAI GPT-4o mini: ~$0.15/$0.60 per 1M tokens
+  - Recommendation: use cheaper model (Haiku/Flash) for parsing, better model (Sonnet) for content generation where quality matters
+
+---
+
+### 11.3 Policy Structuring & Standardisation
+
+**Problem**: Centres write policies in wildly different formats — some bullet points, some paragraphs, some incomplete. Hard for parents to compare across centres. Need structured, consistently written policies.
+
+**Status**: Core AI standardiser and `centre_policies` table built in Section 8. Remaining tasks are UI and templates.
+
+#### Done (built in Section 8)
+- [x] AI policy standardiser — `standardizePolicies()` in `app/src/lib/ai-standardizer.ts`. Takes raw policy text → rewrites into clean, categorised format (7 standard categories + dynamic extras)
+- [x] `centre_policies` table created — replaces legacy TEXT columns. All policies stored as categorised rows with sort_order
+- [x] Migration: `supabase/migrations/20260307000001_centre_pricing_promotions_policies.sql`
+
+#### Remaining Tasks
+- [ ] Policy templates — provide template/example text for each policy category (replacement class, makeup class, commitment, notice period, payment) that centres can start from
+- [ ] "Standardise policies" button — admin or centre clicks, AI rewrites all policy fields into consistent format (UI work, see Section 8 tasks)
+- [ ] Validation/completeness check — flag if a centre is missing key policy categories (e.g. no cancellation policy)
+- [ ] Migrate existing legacy TEXT column data (replacement_class_policy, makeup_class_policy, etc.) into `centre_policies` table rows
+
+---
+
+### 11.4 Data Backup & Preservation (Storage Bucket)
+
+**Problem**: If schema changes or data gets lost during migrations, there's no backup of the original information centres provided. Need to preserve both raw source files and processed data.
+
+#### Tasks
+
+**Raw Source Preservation:**
+- [ ] Create `centre-raw-data` Supabase Storage bucket
+- [ ] Save original schedule uploads (Excel, CSV, screenshots, pasted text) before AI processing — path: `{centre_id}/schedules/{timestamp}-{filename}`
+- [ ] Save original policy text/documents if uploaded — path: `{centre_id}/policies/{timestamp}-{filename}`
+- [ ] Save scraped website HTML/content — path: `{centre_id}/website-scrapes/{timestamp}.html`
+
+**Data Snapshots:**
+- [ ] Periodic snapshot function — serialize full centre record (all fields) + related data (slots, policies, pricing) as JSON
+- [ ] Save snapshots to storage — path: `{centre_id}/snapshots/{timestamp}.json`
+- [ ] Trigger snapshots on: (a) centre creation, (b) before schema migrations, (c) manual admin trigger
+- [ ] Admin UI: "Download centre data" button that exports current state as JSON
+
+---
+
+### 11.5 AI Marketing Formula for Centre Descriptions
+
+**Problem**: Centre descriptions are often bland, factual, and don't sell. Need a proven marketing framework the AI uses to rewrite descriptions that highlight what makes each centre special.
+
+**Marketing Formula (for AI prompt):**
+
+The AI should structure descriptions using this framework:
+1. **Hook** — One bold claim or unique differentiator ("Singapore's only centre specialising in...")
+2. **Proof** — Concrete results/stats ("90% of our P6s scored AL1-3 in PSLE Math")
+3. **Method** — What makes their approach different ("Small groups of max 6, with proprietary worksheets aligned to MOE syllabus")
+4. **Trust** — Credibility signals ("Founded by ex-MOE teachers with 15 years of experience")
+5. **Invitation** — Clear next step ("Book a free trial to see the difference")
+
+#### Tasks
+- [ ] Build marketing-formula prompt — AI takes raw centre info and restructures using Hook → Proof → Method → Trust → Invitation
+- [ ] Reference online information — AI can reference publicly available info about the subject/curriculum (e.g. PSLE format, O-Level requirements) to make descriptions more relevant and specific
+- [ ] Multiple output styles — generate "short" (2-3 sentences for cards), "medium" (1 paragraph for preview), "full" (3-5 paragraphs for detail page)
+- [ ] Subject-specific context — when generating descriptions, AI should understand SG education context (PSLE, O-Levels, FSBB, IP track) to write relevant copy
+- [ ] A/B variants — generate 2-3 description variants so admin/centre can pick their favourite
+- [ ] Store both raw (centre-written) and AI-enhanced versions — never overwrite the original
+
+---
+
+### 11.6 Guided Centre Interview (Conversational Content Extraction)
+
+**Problem**: Centres struggle to write about themselves but can TALK about what makes them great. Need a guided interview flow that asks the right questions and then uses AI to extract compelling marketing copy from their answers.
+
+**Approach**: Start with structured questions (form-style), then optional free-form follow-up chat to dig deeper. AI synthesises all answers into polished profile content.
+
+#### Guided Questions (Form Phase)
+
+These are short, easy-to-answer questions designed to extract the good stuff:
+
+1. **"In one sentence, tell me about your centre."**
+   - Gets the core identity/positioning
+
+2. **"Describe your teaching style in 2-5 words."**
+   - Examples shown as chips: "Structured & exam-focused", "Concept mastery first", "Small group, high attention", "Past-paper intensive", "Patient, confidence-building", "Creative & inquiry-based"
+
+3. **"Share one result you're proud of — a stat or achievement your students have accomplished."**
+   - Examples: "90% improved by 2 grades or more", "85% scored B3 and above", "70% of our P6s made it to their first-choice secondary"
+
+4. **"What do parents say about you most often?"** (optional)
+   - Gets testimonial-style language the centre already knows resonates
+
+5. **"What's one thing that makes you different from other centres?"** (optional)
+   - Forces differentiation — the hardest thing for centres to articulate
+
+#### Tasks
+- [ ] Build guided interview form component — 3 required + 2 optional questions, with example chips/suggestions for each
+- [ ] Place interview in onboarding Step 2 (About) — replace or supplement current free-text fields
+- [ ] Also accessible from centre dashboard "Enhance Profile" button
+- [ ] AI synthesis — take all answers + existing centre data → generate: tagline, description (short/medium/full), teaching style paragraph, track record paragraph
+- [ ] Optional follow-up chat — after form, offer "Want to tell us more? Chat with our AI assistant" where centres can talk freely
+- [ ] Chat extraction — AI identifies key selling points, stories, and stats from free-form conversation
+- [ ] Preview & edit — show generated content side-by-side with form answers, centre picks and edits before saving
+- [ ] Save raw interview answers in storage bucket (11.4) as source data
+
+---
+
+### 11.7 Schedule Upload: One Week × N Duplication
+
+**Problem**: Currently adding slots is tedious — especially for recurring weekly classes. Centre has to upload/add all 4 weeks of dates individually. Should be able to define ONE week of classes and auto-generate for N weeks.
+
+#### Tasks
+- [ ] "Weekly template" mode in slot upload — centre enters classes for one week (Mon-Sat), specifying subject, level, time, fee, capacity per slot
+- [ ] "Generate for __ weeks" selector (default: 4 weeks) — creates copies of each slot for the next N weeks with correct dates
+- [ ] Preview generated slots before confirming — show all N×slots in the clarification table
+- [ ] Handle public holidays — flag slots that fall on SG public holidays (optional: auto-skip or warn)
+- [ ] This should work alongside the existing AI parser — if they upload a screenshot showing one week, AI parses it, then the x4 duplication happens on the parsed results
+- [ ] Minor: fix the custom subject adding UX during clarification (currently requires re-selection)
+
+---
+
+### 11.8 AI Subject & Curriculum Context (Online Reference)
+
+**Problem**: AI-generated descriptions are generic. They should reference real curriculum context (PSLE format, O-Level requirements, FSBB changes) to produce descriptions that resonate with SG parents.
+
+#### Tasks
+- [ ] Build a curriculum reference knowledge base — key facts about SG education system that the AI can reference:
+  - PSLE: subjects, AL scoring, T-score abolition, DSA
+  - O-Levels / N-Levels: subject combinations, grading
+  - FSBB: G1/G2/G3 banding, subject-based banding
+  - IP/IB: Integrated Programme schools, requirements
+  - Enrichment: common enrichment subjects, age groups
+- [ ] Include curriculum context in AI prompts — when generating descriptions for a "P6 PSLE Math" centre, AI knows to reference AL scoring, common parent concerns, etc.
+- [ ] Optional: web search integration — for niche subjects, AI can search for current info (e.g. latest PSLE format changes) to keep descriptions current
+- [ ] Keep knowledge base as a maintainable file (not hardcoded in prompts) — easy to update when MOE changes policies
+
+---
+
+## 12. Decouple Trial Slots from Class Schedule
+
+**Problem**: Currently every class schedule entry automatically becomes a trial slot. In reality, some centres only offer trials on specific days. For example, a tutor who teaches Mon–Fri but only opens trials on Saturday. The current system forces them to either list all days as trial-available or not list their full schedule.
+
+**Why it matters**: This is a booking accuracy issue. Parents see slots that aren't actually available for trials, and centres can't accurately represent their trial availability. As we onboard more centres, this will become a common pain point.
+
+### Approach Options
+- [ ] **Option A: `is_trial_available` flag on `trial_slots`** — Add a boolean column. Default `true` for backward compatibility. Centres toggle off days they don't want trials on. Simplest change, minimal migration.
+- [ ] **Option B: Separate trial schedule** — Keep class schedule as informational, add a separate "trial availability" config where centres pick which days/times they accept trials. More flexible but bigger change.
+
+### Tasks (once approach decided)
+- [ ] Migration: add trial availability field(s) to schema
+- [ ] Centre dashboard: UI for centres to mark which slots accept trials
+- [ ] Admin onboarding: ability to set trial availability during centre setup
+- [ ] Public booking page: only show trial-available slots to parents
+- [ ] Backward compatibility: existing centres default to all slots = trial-available
+
+---
+
+### 11.9 Extra Ideas & Nice-to-Haves
+
+- [ ] **Centre comparison view** — parents can compare 2-3 centres side-by-side (description, pricing, policies, teaching style, results)
+- [ ] **"Why parents choose us" section** — auto-generated from interview answers + reviews, shown on centre profile
+- [ ] **AI review summariser** — once reviews system has data (CP6), summarise common praise/concerns into a "What parents say" blurb
+- [ ] **Centre score/completeness indicator** — show centres how "complete" their profile is (e.g. "85% complete — add a track record to reach 100%") to encourage better profiles
+- [ ] **Suggested improvements** — AI analyses a centre's profile and suggests specific improvements ("Your description doesn't mention class size — adding this can increase bookings by X%")

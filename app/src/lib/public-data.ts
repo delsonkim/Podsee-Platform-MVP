@@ -3,7 +3,8 @@
 // The mock-data.ts file can be kept as a fallback reference.
 
 import { createAdminClient } from './supabase/admin'
-import type { Centre, Subject, Level, TrialSlot } from '@/types/database'
+import { unstable_cache } from 'next/cache'
+import type { Centre, Subject, Level, TrialSlot, CentrePricing, CentrePolicy } from '@/types/database'
 
 export type CentreSummary = Centre & {
   subjects: Subject[]
@@ -86,23 +87,42 @@ export async function getCentreBySlug(slug: string): Promise<CentreDetail | null
     const supabase = createAdminClient()
     const today = new Date().toISOString().slice(0, 10)
 
-    const { data, error } = await supabase
+    // First get the centre ID with a lightweight query, then parallelize everything
+    const { data: idRow } = await supabase
       .from('centres')
-      .select(`
-        *,
-        centre_subjects(subjects(*)),
-        centre_levels(levels(*)),
-        trial_slots!left(*, subjects(*), levels(*)),
-        teachers(*)
-      `)
+      .select('id')
       .eq('slug', slug)
       .eq('is_active', true)
-      .gte('trial_slots.date', today)
-      .gt('trial_slots.spots_remaining', 0)
-      .eq('trial_slots.is_draft', false)
       .single()
 
-    if (error || !data) return null
+    if (!idRow) return null
+
+    // Run ALL queries in parallel
+    const [{ data }, { data: reviewData }] = await Promise.all([
+      supabase
+        .from('centres')
+        .select(`
+          *,
+          centre_subjects(subjects(*)),
+          centre_levels(levels(*)),
+          trial_slots!left(*, subjects(*), levels(*)),
+          teachers(*)
+        `)
+        .eq('id', idRow.id)
+        .gte('trial_slots.date', today)
+        .gt('trial_slots.spots_remaining', 0)
+        .eq('trial_slots.is_draft', false)
+        .single(),
+      supabase
+        .from('reviews')
+        .select('id, rating, review_text, created_at, parents(name)')
+        .eq('centre_id', idRow.id)
+        .eq('status', 'approved')
+        .order('created_at', { ascending: false })
+        .limit(20),
+    ])
+
+    if (!data) return null
 
     const d = data as any
     const centre: Centre = { ...d }
@@ -130,15 +150,6 @@ export async function getCentreBySlug(slug: string): Promise<CentreDetail | null
 
     const teachers: Teacher[] = ((d.teachers as any[]) ?? [])
       .sort((a: any, b: any) => (a.sort_order ?? 99) - (b.sort_order ?? 99))
-
-    // Fetch approved reviews for public display on centre profile
-    const { data: reviewData } = await supabase
-      .from('reviews')
-      .select('id, rating, review_text, created_at, parents(name)')
-      .eq('centre_id', centre.id)
-      .eq('status', 'approved')
-      .order('created_at', { ascending: false })
-      .limit(20)
 
     const reviews: PublicReview[] = ((reviewData as any[]) ?? []).map((r: any) => ({
       id: r.id,
@@ -183,23 +194,92 @@ export async function getSlotById(id: string): Promise<SlotDetail | null> {
   }
 }
 
-export async function getAllSubjects(): Promise<Subject[]> {
+export const getAllSubjects = unstable_cache(
+  async (): Promise<Subject[]> => {
+    try {
+      const supabase = createAdminClient()
+      const { data, error } = await supabase.from('subjects').select('*').order('sort_order')
+      if (error || !data) return []
+      return data as Subject[]
+    } catch {
+      return []
+    }
+  },
+  ['all-subjects'],
+  { revalidate: 300 }
+)
+
+export const getAllLevels = unstable_cache(
+  async (): Promise<Level[]> => {
+    try {
+      const supabase = createAdminClient()
+      const { data, error } = await supabase.from('levels').select('*').order('sort_order')
+      if (error || !data) return []
+      return data as Level[]
+    } catch {
+      return []
+    }
+  },
+  ['all-levels'],
+  { revalidate: 300 }
+)
+
+// ── Public pricing / promotions / policies ──────────────────
+
+export async function getCentrePricing(centreId: string): Promise<(CentrePricing & { subject_name: string; level_label: string | null })[]> {
   try {
     const supabase = createAdminClient()
-    const { data, error } = await supabase.from('subjects').select('*').order('sort_order')
-    if (error || !data) return []
-    return data as Subject[]
+    const { data } = await supabase
+      .from('centre_pricing')
+      .select('*, subjects(name), levels(label)')
+      .eq('centre_id', centreId)
+      .order('created_at')
+    if (!data) return []
+    return (data as any[]).map((r) => ({
+      ...r,
+      subject_name: r.subjects?.name ?? 'Unknown',
+      level_label: r.levels?.label ?? null,
+    }))
   } catch {
     return []
   }
 }
 
-export async function getAllLevels(): Promise<Level[]> {
+export async function getSlotPricing(
+  centreId: string,
+  subjectId: string,
+  levelId: string | null
+): Promise<{ regular_fee: number; billing_display: string | null } | null> {
   try {
     const supabase = createAdminClient()
-    const { data, error } = await supabase.from('levels').select('*').order('sort_order')
-    if (error || !data) return []
-    return data as Level[]
+    let query = supabase
+      .from('centre_pricing')
+      .select('regular_fee, billing_display')
+      .eq('centre_id', centreId)
+      .eq('subject_id', subjectId)
+
+    if (levelId) {
+      query = query.eq('level_id', levelId)
+    } else {
+      query = query.is('level_id', null)
+    }
+
+    const { data } = await query.maybeSingle()
+    return data ? { regular_fee: data.regular_fee, billing_display: data.billing_display } : null
+  } catch {
+    return null
+  }
+}
+
+export async function getCentrePolicies(centreId: string): Promise<CentrePolicy[]> {
+  try {
+    const supabase = createAdminClient()
+    const { data } = await supabase
+      .from('centre_policies')
+      .select('*')
+      .eq('centre_id', centreId)
+      .order('sort_order')
+    return (data ?? []) as CentrePolicy[]
   } catch {
     return []
   }

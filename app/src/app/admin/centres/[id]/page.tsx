@@ -1,4 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/admin'
+import { getCentrePricing, getCentrePolicies } from '@/lib/public-data'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -47,6 +48,11 @@ export default async function AdminCentreEditPage({ params }: { params: Promise<
     .single()
 
   if (!centre) notFound()
+
+  const [pricingRows, structuredPolicies] = await Promise.all([
+    getCentrePricing(centre.id),
+    getCentrePolicies(centre.id),
+  ])
 
   const c = centre as any
   const draft = (c.has_pending_changes && c.draft_data)
@@ -145,6 +151,77 @@ export default async function AdminCentreEditPage({ params }: { params: Promise<
           other_policies: c.other_policies ?? '',
         }}
       />
+
+      {/* Section D: Pricing (read-only) */}
+      <div className="bg-white rounded-lg border border-gray-200 p-5">
+        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Pricing</p>
+        {pricingRows.length > 0 ? (
+          <div className="border border-gray-200 rounded-lg overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500">Subject</th>
+                  <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500">Level</th>
+                  <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500">Regular Fee</th>
+                  <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500">Trial</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {pricingRows.map((row) => (
+                  <tr key={row.id}>
+                    <td className="px-4 py-2.5 text-gray-900 font-medium">{row.subject_name}</td>
+                    <td className="px-4 py-2.5 text-gray-600">
+                      {row.level_label ?? 'All'}
+                      {row.stream && <span className="text-gray-400 text-xs ml-1">({row.stream})</span>}
+                    </td>
+                    <td className="px-4 py-2.5 text-gray-900">
+                      S${row.regular_fee}
+                      {row.billing_display && <span className="text-gray-400 text-xs ml-1">/{row.billing_display}</span>}
+                    </td>
+                    <td className="px-4 py-2.5">
+                      {row.trial_type === 'free'
+                        ? <span className="text-green-600 font-medium">Free</span>
+                        : <span className="text-gray-900">S${row.trial_fee}</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="text-sm text-gray-400">No pricing configured.</p>
+        )}
+        {centre.additional_fees && (
+          <p className="mt-2 text-xs text-gray-500"><span className="font-medium">Additional fees:</span> {centre.additional_fees}</p>
+        )}
+      </div>
+
+      {/* Section E: Promotions (read-only) */}
+      <div className="bg-white rounded-lg border border-gray-200 p-5">
+        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Promotions</p>
+        {c.promotions_text ? (
+          <p className="text-sm text-gray-900 whitespace-pre-line">{c.promotions_text}</p>
+        ) : (
+          <p className="text-sm text-gray-400">No promotions set.</p>
+        )}
+      </div>
+
+      {/* Section F: Structured Policies (read-only) */}
+      {structuredPolicies.length > 0 && (
+        <div className="bg-white rounded-lg border border-gray-200 p-5">
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">
+            Structured Policies <span className="text-gray-400 font-normal">(from AI extraction)</span>
+          </p>
+          <div className="space-y-3">
+            {structuredPolicies.map((policy) => (
+              <div key={policy.id} className="border border-gray-100 rounded-lg p-3">
+                <p className="text-sm font-semibold text-gray-900 mb-1">{policy.category}</p>
+                <p className="text-sm text-gray-600 whitespace-pre-line">{policy.description}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

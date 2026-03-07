@@ -102,6 +102,110 @@ export async function updatePolicies(data: {
   })
 }
 
+// ── Promotions section ──────────────────────────────────────
+
+export async function updatePromotions(data: {
+  promotions_text: string
+}): Promise<Result> {
+  const { centreId } = await requireCentreUser()
+  return saveCentreFields(centreId, {
+    promotions_text: data.promotions_text || null,
+  })
+}
+
+// ── Pricing section ─────────────────────────────────────────
+
+export async function updatePricing(data: {
+  rows: {
+    subject_id: string
+    level_id: string | null
+    stream: string | null
+    trial_type: 'free' | 'discounted' | 'same_as_regular' | 'multi_lesson'
+    trial_fee: number
+    trial_lessons: number
+    regular_fee: number
+    lessons_per_period: number | null
+    billing_display: string | null
+    lesson_duration_minutes: number | null
+  }[]
+}): Promise<{ success: true } | { error: string }> {
+  const { centreId } = await requireCentreUser()
+  const supabase = createAdminClient()
+
+  // Replace strategy: delete existing then insert new
+  await supabase.from('centre_pricing').delete().eq('centre_id', centreId)
+
+  if (data.rows.length > 0) {
+    const { error } = await supabase.from('centre_pricing').insert(
+      data.rows.map((row) => ({
+        centre_id: centreId,
+        subject_id: row.subject_id,
+        level_id: row.level_id,
+        stream: row.stream,
+        trial_type: row.trial_type,
+        trial_fee: row.trial_fee,
+        trial_lessons: row.trial_lessons,
+        regular_fee: row.regular_fee,
+        lessons_per_period: row.lessons_per_period,
+        billing_display: row.billing_display,
+        lesson_duration_minutes: row.lesson_duration_minutes,
+        trial_same_as_regular: row.trial_type === 'same_as_regular',
+      }))
+    )
+    if (error) return { error: error.message }
+  }
+
+  // Auto-fill trial fees on matching slots
+  if (data.rows.length > 0) {
+    const { autoFillSlotTrialFees } = await import('@/lib/pricing-policies-actions')
+    await autoFillSlotTrialFees(supabase, centreId, data.rows.map((r) => ({
+      subject_name: '',
+      subject_id: r.subject_id,
+      level_label: null,
+      level_id: r.level_id,
+      stream: r.stream,
+      trial_type: r.trial_type,
+      trial_fee: r.trial_fee,
+      trial_lessons: r.trial_lessons,
+      regular_fee: r.regular_fee,
+      lessons_per_period: r.lessons_per_period,
+      billing_display: r.billing_display ?? '',
+      lesson_duration_minutes: r.lesson_duration_minutes,
+      regular_schedule_note: null,
+    })))
+  }
+
+  revalidatePath('/centre-dashboard/centre-info')
+  return { success: true }
+}
+
+// ── Structured policies (centre_policies table) ─────────────
+
+export async function updateStructuredPolicies(data: {
+  policies: { category: string; description: string }[]
+}): Promise<{ success: true } | { error: string }> {
+  const { centreId } = await requireCentreUser()
+  const supabase = createAdminClient()
+
+  // Replace strategy: delete existing then insert new
+  await supabase.from('centre_policies').delete().eq('centre_id', centreId)
+
+  if (data.policies.length > 0) {
+    const { error } = await supabase.from('centre_policies').insert(
+      data.policies.map((p, i) => ({
+        centre_id: centreId,
+        category: p.category,
+        description: p.description,
+        sort_order: i,
+      }))
+    )
+    if (error) return { error: error.message }
+  }
+
+  revalidatePath('/centre-dashboard/centre-info')
+  return { success: true }
+}
+
 // ── Images section ───────────────────────────────────────────
 
 export async function updateImages(data: {

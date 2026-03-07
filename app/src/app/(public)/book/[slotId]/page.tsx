@@ -1,4 +1,4 @@
-import { getSlotById, getAllLevels } from '@/lib/public-data'
+import { getSlotById, getAllLevels, getSlotPricing } from '@/lib/public-data'
 import { getStreamDisplay } from '@/types/database'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
@@ -42,16 +42,17 @@ export default async function BookingPage({
 }) {
   const { slotId } = await params
 
+  // Run auth check, slot fetch, and levels fetch all in parallel
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect(`/centres`)
-
-  const [slot, levels] = await Promise.all([
+  const [{ data: { user } }, slot, levels] = await Promise.all([
+    supabase.auth.getUser(),
     getSlotById(slotId),
-    Promise.resolve(getAllLevels()),
+    getAllLevels(),
   ])
-
+  if (!user) redirect(`/centres`)
   if (!slot) notFound()
+
+  const pricing = await getSlotPricing(slot.centre.id, slot.subject.id, slot.level?.id ?? null)
 
   const userProfile = {
     name: user.user_metadata?.full_name ?? user.user_metadata?.name ?? '',
@@ -113,8 +114,19 @@ export default async function BookingPage({
                 })}
                 <div className="flex justify-between pt-2.5 border-t border-linen">
                   <dt className="text-sm text-sage">Trial fee</dt>
-                  <dd className="font-display font-bold text-lg text-forest">S${slot.trial_fee}</dd>
+                  <dd className="font-display font-bold text-lg text-forest">
+                    {slot.trial_fee === 0 ? 'Free' : `S$${slot.trial_fee}`}
+                  </dd>
                 </div>
+                {pricing && pricing.regular_fee > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <dt className="text-sage">Regular fee</dt>
+                    <dd className="text-forest/70">
+                      S${pricing.regular_fee}
+                      {pricing.billing_display && <span className="text-sage text-xs ml-1">/{pricing.billing_display}</span>}
+                    </dd>
+                  </div>
+                )}
               </dl>
 
               {slot.spots_remaining <= 3 && slot.spots_remaining > 0 && (

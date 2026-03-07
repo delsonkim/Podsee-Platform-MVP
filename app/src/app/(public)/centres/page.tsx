@@ -27,8 +27,8 @@ export default async function CentresPage({
   const { area, subject, level } = await searchParams
   const [centres, subjects, levels] = await Promise.all([
     getCentres(),
-    Promise.resolve(getAllSubjects()),
-    Promise.resolve(getAllLevels()),
+    getAllSubjects(),
+    getAllLevels(),
   ])
 
   const areas = [...new Set(centres.map((c) => c.area).filter(Boolean))] as string[]

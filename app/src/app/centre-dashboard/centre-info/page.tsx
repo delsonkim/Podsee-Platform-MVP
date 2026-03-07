@@ -1,9 +1,12 @@
 import { requireCentreUser } from '@/lib/centre-auth'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { getCentrePricing } from '@/lib/public-data'
 import ProfileForm from './ProfileForm'
 import LocationForm from './LocationForm'
 import PoliciesForm from './PoliciesForm'
 import ImagesForm from './ImagesForm'
+import PricingSection from './PricingSection'
+import PromotionsForm from './PromotionsForm'
 
 async function getCentreDetails(centreId: string) {
   const supabase = createAdminClient()
@@ -30,11 +33,19 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
 
 export default async function CentreInfoPage() {
   const { centreId } = await requireCentreUser()
+  const supabase = createAdminClient()
   const centre = await getCentreDetails(centreId)
 
   if (!centre) {
     return <p className="text-gray-400">Centre not found.</p>
   }
+
+  const [pricingRows, { data: allSubjects }, { data: allLevels }, { data: structuredPolicies }] = await Promise.all([
+    getCentrePricing(centreId),
+    supabase.from('subjects').select('id, name, sort_order').order('sort_order'),
+    supabase.from('levels').select('id, label, level_group, sort_order').order('sort_order'),
+    supabase.from('centre_policies').select('id, category, description, sort_order').eq('centre_id', centreId).order('sort_order'),
+  ])
 
   const c = centre as any
   const isLive = c.is_active === true
@@ -106,23 +117,20 @@ export default async function CentreInfoPage() {
         isLive={isLive}
       />
 
-      <PoliciesForm
-        initial={{
-          replacement_class_policy: (eff('replacement_class_policy') as string) ?? '',
-          makeup_class_policy: (eff('makeup_class_policy') as string) ?? '',
-          commitment_terms: (eff('commitment_terms') as string) ?? '',
-          notice_period_terms: (eff('notice_period_terms') as string) ?? '',
-          payment_terms: (eff('payment_terms') as string) ?? '',
-          other_policies: (eff('other_policies') as string) ?? '',
-        }}
-        isLive={isLive}
-      />
+      <PoliciesForm structuredPolicies={structuredPolicies ?? []} />
 
       <ImagesForm
         initial={{
           image_urls: (eff('image_urls') as string[]) ?? [],
           paynow_qr_image_url: (eff('paynow_qr_image_url') as string | null) ?? null,
         }}
+        isLive={isLive}
+      />
+
+      <PricingSection rows={pricingRows} subjects={allSubjects ?? []} levels={allLevels ?? []} />
+
+      <PromotionsForm
+        initial={(eff('promotions_text') as string) ?? ''}
         isLive={isLive}
       />
     </div>
