@@ -138,12 +138,13 @@ export default async function MyBookingsPage() {
 }
 
 function BookingCard({ booking, variant }: { booking: any; variant: 'upcoming' | 'past' }) {
-  const slot = booking.trial_slots
-  const centre = slot?.centres
-  const subject = slot?.subjects
-  const level = slot?.levels
+  const slot = booking.trial_slots as any | null
+  const centre = slot?.centres as any | null
+  const subject = slot?.subjects as any | null
+  const level = slot?.levels as any | null
   const status = booking.status as BookingStatus
   const isRescheduled = status === 'cancelled' && booking.cancelled_by === 'reschedule'
+  const isCentreCancelled = status === 'cancelled' && booking.cancelled_by === 'centre' && booking.cancel_reason
   const isDisputed = status === 'completed' && booking.is_flagged
   const showBadge = !QUIET_STATUSES.includes(status)
   // Completed/converted are still relevant — keep them prominent like upcoming cards
@@ -250,6 +251,16 @@ function BookingCard({ booking, variant }: { booking: any; variant: 'upcoming' |
         <p className="text-xs text-sage/50 mt-3 font-mono">
           Ref: {booking.booking_ref}
         </p>
+
+        {/* Centre cancellation reason */}
+        {isCentreCancelled && (
+          <div className="mt-3 bg-red-50 border border-red-200 rounded-lg p-3">
+            <p className="text-xs text-red-800">
+              <span className="font-semibold">Cancelled by centre:</span>{' '}
+              {booking.cancel_reason}
+            </p>
+          </div>
+        )}
 
         {/* Cancel / Reschedule actions — only for confirmed upcoming bookings */}
         {variant === 'upcoming' && status === 'confirmed' && centre && slot && (

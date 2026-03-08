@@ -8,10 +8,11 @@ import {
   type TeacherInput,
   type TrialSlotInput,
 } from './actions'
-import { uploadCentreImage, uploadPaynowQr } from './image-actions'
+import { uploadCentreImage } from './image-actions'
 import SlotUploader, { type ParsedSlot } from '@/components/SlotUploader'
 import { parseSchedule, parseScheduleImage, createCustomSubject, saveParseCorrections } from './actions'
 import PricingPolicyStep from './PricingPolicyStep'
+import WeekDuplicationStep from './WeekDuplicationStep'
 
 interface Subject {
   id: string
@@ -49,6 +50,8 @@ const emptyTeacher: TeacherInput = {
   qualifications: '',
   bio: '',
   years_experience: null,
+  linkedin_url: '',
+  students_taught: null,
   subject_ids: [],
   level_ids: [],
 }
@@ -80,10 +83,12 @@ export default function AddCentreForm({
   const [yearsOperating, setYearsOperating] = useState('')
   const [trialCommissionRate, setTrialCommissionRate] = useState('')
   const [conversionCommissionRate, setConversionCommissionRate] = useState('')
-  const [trialType, setTrialType] = useState<'free' | 'paid'>('free')
-  const [paynowQrImageUrl, setPaynowQrImageUrl] = useState<string | null>(null)
-  const [qrUploading, setQrUploading] = useState(false)
-  const qrInputRef = useRef<HTMLInputElement>(null)
+  const [websiteUrl, setWebsiteUrl] = useState('')
+  const [instagramUrl, setInstagramUrl] = useState('')
+  const [tiktokUrl, setTiktokUrl] = useState('')
+  const [whatsappNumber, setWhatsappNumber] = useState('')
+  const [phoneNumber, setPhoneNumber] = useState('')
+  const [googleMapsUrl, setGoogleMapsUrl] = useState('')
 
   // Step 2: About
   const [specialisation, setSpecialisation] = useState('')
@@ -98,6 +103,8 @@ export default function AddCentreForm({
   ])
 
   // Step 4: Schedule (required)
+  const [schedulePhase, setSchedulePhase] = useState<'upload' | 'duplicate' | 'ready'>('upload')
+  const [baseSlots, setBaseSlots] = useState<ParsedSlot[]>([]) // 1-week parsed slots
   const [importedSlots, setImportedSlots] = useState<ParsedSlot[]>([])
 
   // ── Handlers ──────────────────────────────────────────────
@@ -126,7 +133,8 @@ export default function AddCentreForm({
   }
 
   function handleSlotsImported(slots: ParsedSlot[]) {
-    setImportedSlots(slots)
+    setBaseSlots(slots)
+    setSchedulePhase('duplicate')
   }
 
   async function handleImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
@@ -145,19 +153,6 @@ export default function AddCentreForm({
 
   function removeImage(index: number) {
     setImageUrls((prev) => prev.filter((_, i) => i !== index))
-  }
-
-  async function handleQrSelect(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
-    setQrUploading(true)
-    setError(null)
-    const fd = new FormData()
-    fd.append('file', file)
-    const result = await uploadPaynowQr(fd)
-    setQrUploading(false)
-    if ('url' in result) setPaynowQrImageUrl(result.url)
-    else setError(result.error)
   }
 
   // ── Validation ────────────────────────────────────────────
@@ -188,10 +183,14 @@ export default function AddCentreForm({
           nearest_mrt: nearestMrt.trim(),
           years_operating: yearsOperating ? parseInt(yearsOperating) : null,
           image_urls: imageUrls,
-          trial_type: trialType,
-          paynow_qr_image_url: trialType === 'paid' ? paynowQrImageUrl : null,
           trial_commission_rate: trialCommissionRate ? parseFloat(trialCommissionRate) : 0,
           conversion_commission_rate: conversionCommissionRate ? parseFloat(conversionCommissionRate) : 0,
+          website_url: websiteUrl.trim(),
+          instagram_url: instagramUrl.trim(),
+          tiktok_url: tiktokUrl.trim(),
+          whatsapp_number: whatsappNumber.trim(),
+          phone_number: phoneNumber.trim(),
+          google_maps_url: googleMapsUrl.trim(),
         })
         if ('error' in result) { setError(result.error); return }
         setCentreId(result.centreId)
@@ -272,13 +271,14 @@ export default function AddCentreForm({
         {STEPS.map((label, i) => (
           <button
             key={label}
-            onClick={() => i !== step && setStep(i)}
+            onClick={() => i < step && setStep(i)}
+            disabled={i >= step}
             className={`flex items-center gap-1.5 text-xs font-medium transition-colors shrink-0 ${
               i === step
                 ? 'text-gray-900'
                 : i < step
                 ? 'text-blue-600 hover:text-blue-700 cursor-pointer'
-                : 'text-gray-400 hover:text-gray-600 cursor-pointer'
+                : 'text-gray-400 cursor-default'
             }`}
           >
             <span
@@ -458,82 +458,71 @@ export default function AddCentreForm({
                 />
               </div>
 
-              {/* Trial Type */}
+              {/* Contact & Social Links */}
               <div className="md:col-span-2 border-t border-gray-100 pt-5 mt-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Trial Type</label>
-                <p className="text-xs text-gray-400 mb-3">Does this centre charge a fee for trial classes?</p>
-                <div className="flex gap-4">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="trial_type"
-                      value="free"
-                      checked={trialType === 'free'}
-                      onChange={() => { setTrialType('free'); setPaynowQrImageUrl(null) }}
-                      className="w-4 h-4 border-gray-300"
-                    />
-                    <span className="text-sm text-gray-700">Free trial</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="trial_type"
-                      value="paid"
-                      checked={trialType === 'paid'}
-                      onChange={() => setTrialType('paid')}
-                      className="w-4 h-4 border-gray-300"
-                    />
-                    <span className="text-sm text-gray-700">Paid trial</span>
-                  </label>
-                </div>
+                <h3 className="text-sm font-semibold text-gray-700 mb-1">Contact &amp; Social Links</h3>
+                <p className="text-xs text-gray-400 mb-4">All optional. Parents will see these on the centre page.</p>
               </div>
-
-              {/* PayNow QR upload — only when paid */}
-              {trialType === 'paid' && (
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    PayNow QR Code Screenshot
-                  </label>
-                  <p className="text-xs text-gray-400 mb-2">
-                    Upload a screenshot of the centre&apos;s PayNow QR code. Parents will see this when booking a paid trial.
-                  </p>
-                  {paynowQrImageUrl ? (
-                    <div className="relative inline-block rounded-lg overflow-hidden border border-gray-200">
-                      <img
-                        src={paynowQrImageUrl}
-                        alt="PayNow QR"
-                        className="w-48 h-48 object-contain bg-white"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setPaynowQrImageUrl(null)
-                          if (qrInputRef.current) qrInputRef.current.value = ''
-                        }}
-                        className="absolute top-2 right-2 bg-white/90 backdrop-blur text-gray-600 hover:text-red-600 rounded-full w-7 h-7 flex items-center justify-center text-sm shadow-sm"
-                      >
-                        &times;
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => qrInputRef.current?.click()}
-                      disabled={qrUploading}
-                      className="w-full border-2 border-dashed border-gray-200 rounded-lg py-8 text-sm text-gray-500 hover:text-gray-700 hover:border-gray-300 transition-colors disabled:opacity-50"
-                    >
-                      {qrUploading ? 'Uploading...' : 'Click to upload PayNow QR screenshot'}
-                    </button>
-                  )}
-                  <input
-                    ref={qrInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={handleQrSelect}
-                    className="hidden"
-                  />
-                </div>
-              )}
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Website URL</label>
+                <input
+                  type="url"
+                  value={websiteUrl}
+                  onChange={(e) => setWebsiteUrl(e.target.value)}
+                  placeholder="https://example.com"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Google Maps URL</label>
+                <input
+                  type="url"
+                  value={googleMapsUrl}
+                  onChange={(e) => setGoogleMapsUrl(e.target.value)}
+                  placeholder="https://maps.google.com/..."
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Instagram URL</label>
+                <input
+                  type="url"
+                  value={instagramUrl}
+                  onChange={(e) => setInstagramUrl(e.target.value)}
+                  placeholder="https://instagram.com/yourcentre"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">TikTok URL</label>
+                <input
+                  type="url"
+                  value={tiktokUrl}
+                  onChange={(e) => setTiktokUrl(e.target.value)}
+                  placeholder="https://tiktok.com/@yourcentre"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">WhatsApp Number</label>
+                <input
+                  type="tel"
+                  value={whatsappNumber}
+                  onChange={(e) => setWhatsappNumber(e.target.value)}
+                  placeholder="e.g. 6591234567"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Phone Number</label>
+                <input
+                  type="tel"
+                  value={phoneNumber}
+                  onChange={(e) => setPhoneNumber(e.target.value)}
+                  placeholder="e.g. 6567891234"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400"
+                />
+              </div>
             </div>
           </div>
         )}
@@ -677,12 +666,33 @@ export default function AddCentreForm({
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Years of Experience</label>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Years of Teaching</label>
                     <input
                       type="number"
                       value={teacher.years_experience ?? ''}
                       onChange={(e) => updateTeacher(idx, 'years_experience', e.target.value ? parseInt(e.target.value) : null)}
                       min="0"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Students Taught</label>
+                    <input
+                      type="number"
+                      value={teacher.students_taught ?? ''}
+                      onChange={(e) => updateTeacher(idx, 'students_taught', e.target.value ? parseInt(e.target.value) : null)}
+                      placeholder="e.g. 500"
+                      min="0"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400"
+                    />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-medium text-gray-600 mb-1">LinkedIn URL <span className="text-gray-400 font-normal">(optional)</span></label>
+                    <input
+                      type="url"
+                      value={teacher.linkedin_url}
+                      onChange={(e) => updateTeacher(idx, 'linkedin_url', e.target.value)}
+                      placeholder="https://linkedin.com/in/..."
                       className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400"
                     />
                   </div>
@@ -716,18 +726,23 @@ export default function AddCentreForm({
             <div>
               <h2 className="text-lg font-bold text-gray-900">Trial Slot Schedule</h2>
               <p className="text-sm text-gray-500 mt-1">
-                Upload the centre&apos;s trial class schedule. Subjects and levels will be auto-detected from the data.
+                Upload the centre&apos;s trial class schedule. We&apos;ll parse 1 week, then you can duplicate it.
               </p>
             </div>
 
-            {importedSlots.length > 0 && (
+            {/* Phase: ready — slots confirmed after duplication */}
+            {schedulePhase === 'ready' && importedSlots.length > 0 && (
               <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4">
                 <p className="text-sm text-green-700 font-medium">
                   {importedSlots.length} slot{importedSlots.length !== 1 ? 's' : ''} ready to import
                 </p>
                 <button
                   type="button"
-                  onClick={() => setImportedSlots([])}
+                  onClick={() => {
+                    setImportedSlots([])
+                    setBaseSlots([])
+                    setSchedulePhase('upload')
+                  }}
                   className="text-xs text-green-600 hover:text-green-800 mt-1"
                 >
                   Clear and re-upload
@@ -735,7 +750,8 @@ export default function AddCentreForm({
               </div>
             )}
 
-            {importedSlots.length === 0 && (
+            {/* Phase: upload — parse 1 week */}
+            {schedulePhase === 'upload' && (
               <SlotUploader
                 subjects={subjects}
                 levels={levels}
@@ -745,6 +761,23 @@ export default function AddCentreForm({
                 parseScheduleImageFn={(b64, mt, weeks) => parseScheduleImage(b64, mt, centreId ?? undefined, weeks)}
                 createCustomSubjectFn={createCustomSubject}
                 saveCorrectionsFn={saveParseCorrections}
+                hideWeeksInput
+                hideFee
+              />
+            )}
+
+            {/* Phase: duplicate — review and duplicate across weeks */}
+            {schedulePhase === 'duplicate' && baseSlots.length > 0 && (
+              <WeekDuplicationStep
+                baseSlots={baseSlots}
+                onConfirm={(slots) => {
+                  setImportedSlots(slots)
+                  setSchedulePhase('ready')
+                }}
+                onBack={() => {
+                  setBaseSlots([])
+                  setSchedulePhase('upload')
+                }}
               />
             )}
           </div>

@@ -120,7 +120,7 @@ export async function updatePricing(data: {
     subject_id: string
     level_id: string | null
     stream: string | null
-    trial_type: 'free' | 'discounted' | 'same_as_regular' | 'multi_lesson'
+    trial_type: 'free' | 'same_as_regular'
     trial_fee: number
     trial_lessons: number
     regular_fee: number
@@ -197,6 +197,72 @@ export async function updateStructuredPolicies(data: {
         category: p.category,
         description: p.description,
         sort_order: i,
+      }))
+    )
+    if (error) return { error: error.message }
+  }
+
+  revalidatePath('/centre-dashboard/centre-info')
+  return { success: true }
+}
+
+// ── Contact & Social Links ──────────────────────────────────
+
+export async function updateContactLinks(data: {
+  website_url: string
+  instagram_url: string
+  tiktok_url: string
+  whatsapp_number: string
+  phone_number: string
+  google_maps_url: string
+}): Promise<Result> {
+  const { centreId } = await requireCentreUser()
+  return saveCentreFields(centreId, {
+    website_url: data.website_url || null,
+    instagram_url: data.instagram_url || null,
+    tiktok_url: data.tiktok_url || null,
+    whatsapp_number: data.whatsapp_number || null,
+    phone_number: data.phone_number || null,
+    google_maps_url: data.google_maps_url || null,
+  })
+}
+
+// ── Teachers section ────────────────────────────────────────
+
+export async function updateTeachers(data: {
+  teachers: {
+    id?: string
+    name: string
+    role: string
+    is_founder: boolean
+    qualifications: string
+    bio: string
+    years_experience: number | null
+    linkedin_url: string
+    students_taught: number | null
+  }[]
+}): Promise<{ success: true } | { error: string }> {
+  const { centreId } = await requireCentreUser()
+  const supabase = createAdminClient()
+
+  const validTeachers = data.teachers.filter((t) => t.name.trim())
+
+  // Replace strategy: delete existing then insert new
+  await supabase.from('teachers').delete().eq('centre_id', centreId)
+
+  if (validTeachers.length > 0) {
+    const { error } = await supabase.from('teachers').insert(
+      validTeachers.map((t, i) => ({
+        centre_id: centreId,
+        name: t.name.trim(),
+        role: t.role || null,
+        is_founder: t.is_founder,
+        qualifications: t.qualifications || null,
+        bio: t.bio || null,
+        years_experience: t.years_experience,
+        linkedin_url: t.linkedin_url || null,
+        students_taught: t.students_taught,
+        sort_order: t.is_founder ? 0 : i + 1,
       }))
     )
     if (error) return { error: error.message }

@@ -3,11 +3,44 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireCentreUser } from '@/lib/centre-auth'
 import { revalidatePath } from 'next/cache'
-import { parseScheduleWithAI, parseScheduleImageWithAI } from '@/lib/ai-parser'
+import { parseScheduleWithAI, parseScheduleImageWithAI, verifyUnknownSubjects } from '@/lib/ai-parser'
 import type { AIParseResult } from '@/types/ai-parser'
 import { fetchCorrections, saveCorrections, type CorrectionInput } from '@/lib/parse-corrections'
 
 // Re-use shared parse / custom-subject logic (same as admin actions)
+
+async function attachWebSuggestions(result: AIParseResult, subjects: { id: string; name: string }[]): Promise<AIParseResult> {
+  const unknownTexts = result.slots
+    .filter((s) => s.subject.confidence === 'needs_review' && !s.subject.match_id)
+    .map((s) => s.subject.raw_text ?? s.subject.value)
+    .filter(Boolean) as string[]
+
+  if (unknownTexts.length === 0) return result
+
+  const suggestions = await verifyUnknownSubjects(unknownTexts, subjects)
+  if (suggestions.size === 0) return result
+
+  return {
+    ...result,
+    slots: result.slots.map((slot) => {
+      const key = (slot.subject.raw_text ?? slot.subject.value)?.trim().toLowerCase()
+      const suggestion = key ? suggestions.get(key) : undefined
+      if (!suggestion) return slot
+      return {
+        ...slot,
+        subject: {
+          ...slot.subject,
+          // If web search found a match to an existing subject, upgrade confidence
+          ...(suggestion.suggested_match_id ? {
+            match_id: suggestion.suggested_match_id,
+            confidence: 'inferred' as const,
+          } : {}),
+          web_suggestion: suggestion,
+        },
+      }
+    }),
+  }
+}
 
 export async function parseSchedule(rawText: string, weeksAhead?: number): Promise<AIParseResult> {
   const { centreId } = await requireCentreUser()
@@ -19,7 +52,8 @@ export async function parseSchedule(rawText: string, weeksAhead?: number): Promi
     fetchCorrections(centreId),
   ])
 
-  return parseScheduleWithAI(rawText, subjects ?? [], levels ?? [], { weeksAhead, corrections })
+  const result = await parseScheduleWithAI(rawText, subjects ?? [], levels ?? [], { weeksAhead, corrections })
+  return attachWebSuggestions(result, subjects ?? [])
 }
 
 export async function parseScheduleImage(
@@ -36,7 +70,8 @@ export async function parseScheduleImage(
     fetchCorrections(centreId),
   ])
 
-  return parseScheduleImageWithAI(base64Data, mediaType, subjects ?? [], levels ?? [], { weeksAhead, corrections })
+  const result = await parseScheduleImageWithAI(base64Data, mediaType, subjects ?? [], levels ?? [], { weeksAhead, corrections })
+  return attachWebSuggestions(result, subjects ?? [])
 }
 
 export async function saveParseCorrections(corrections: CorrectionInput[]): Promise<void> {
@@ -105,7 +140,7 @@ export async function addDraftSlots(
   const { centreId } = await requireCentreUser()
   const supabase = createAdminClient()
 
-  const valid = slots.filter((s) => s.subject_id && s.date && s.start_time && s.end_time)
+  const valid = slots.filter((s) => s.subject_id && s.date && s.start_time && s.end_time && s.max_students >= 1)
   if (valid.length === 0) return { error: 'No valid slots to add.' }
 
   // Check if centre is trusted (bypass draft)

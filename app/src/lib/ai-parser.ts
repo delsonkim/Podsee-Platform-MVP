@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
-import type { AIParsedSlot, AIParseResult, SkippedRow } from '@/types/ai-parser'
+import type { AIParsedSlot, AIParseResult, SkippedRow, SubjectWebSuggestion } from '@/types/ai-parser'
 import type { StoredCorrection } from '@/lib/parse-corrections'
 
 // ── Conditional init ─────────────────────────────────────────
@@ -362,6 +362,88 @@ export async function parseScheduleWithAI(
     const message = err instanceof Error ? err.message : 'Unknown error'
     return { slots: [], skipped_rows: [], used_ai: false, fallback_reason: message }
   }
+}
+
+// ── Verify unknown subjects via web search ───────────────────
+export async function verifyUnknownSubjects(
+  unknownTexts: string[],
+  existingSubjects: { id: string; name: string }[]
+): Promise<Map<string, SubjectWebSuggestion>> {
+  const results = new Map<string, SubjectWebSuggestion>()
+  if (!anthropic || unknownTexts.length === 0) return results
+
+  const unique = [...new Set(unknownTexts.map((t) => t.trim()).filter(Boolean))]
+  if (unique.length === 0) return results
+
+  const subjectList = existingSubjects.map((s) => `  - "${s.name}" (id: ${s.id})`).join('\n')
+
+  try {
+    const response = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 4096,
+      tools: [
+        {
+          type: 'web_search_20260209' as const,
+          name: 'web_search' as const,
+          max_uses: 3,
+        },
+      ],
+      messages: [
+        {
+          role: 'user',
+          content: `I found these unknown subject names from a tuition centre schedule in Singapore. Search online to verify what each one is, then tell me if it matches any of our existing subjects or if it's genuinely new.
+
+Unknown subjects to verify:
+${unique.map((t, i) => `${i + 1}. "${t}"`).join('\n')}
+
+Our existing subjects:
+${subjectList}
+
+IMPORTANT: You MUST include an entry for EVERY subject listed above. Do not skip any. If you cannot find info online, still include the subject with is_new_subject: true and a best-guess suggested_name.
+
+The "raw_text" field MUST be the EXACT text I gave you above — copy it character-for-character. Do not modify, trim, or rephrase it.
+
+Respond in this exact JSON format (no markdown, no explanation):
+{
+  "verifications": [
+    {
+      "raw_text": "the EXACT original text from above",
+      "suggested_match_id": "uuid of matching existing subject, or null if new",
+      "suggested_name": "canonical name for this subject",
+      "web_context": "one-sentence explanation of what this is",
+      "is_new_subject": true
+    }
+  ]
+}`,
+        },
+      ],
+    })
+
+    // Extract text from the response (may have web search result blocks mixed in)
+    const textParts: string[] = []
+    for (const block of response.content) {
+      if (block.type === 'text') textParts.push(block.text)
+    }
+    let jsonStr = textParts.join('').trim()
+    jsonStr = jsonStr.replace(/^```(?:json)?\s*\n?/, '').replace(/\n?\s*```\s*$/, '')
+    const firstBrace = jsonStr.indexOf('{')
+    const lastBrace = jsonStr.lastIndexOf('}')
+    if (firstBrace === -1 || lastBrace === -1) return results
+    jsonStr = jsonStr.slice(firstBrace, lastBrace + 1)
+
+    const parsed = JSON.parse(jsonStr) as { verifications: (SubjectWebSuggestion & { raw_text: string })[] }
+    for (const v of parsed.verifications ?? []) {
+      if (v.raw_text) {
+        const { raw_text: _, ...suggestion } = v
+        // Store with normalized key for case-insensitive matching
+        results.set(v.raw_text.trim().toLowerCase(), suggestion)
+      }
+    }
+  } catch (err) {
+    console.warn('[ai-parser] Web verification failed (non-fatal):', err)
+  }
+
+  return results
 }
 
 // ── Image parse function (screenshot/photo) ──────────────────

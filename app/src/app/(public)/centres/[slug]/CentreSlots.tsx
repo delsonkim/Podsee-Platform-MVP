@@ -1,7 +1,7 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import type { SlotDetail } from '@/lib/public-data'
 import { getStreamDisplay } from '@/types/database'
 import { createClient } from '@/lib/supabase/client'
@@ -49,15 +49,61 @@ function duration(start: string, end: string) {
   return mn > 0 ? `${h}h ${mn}min` : `${h}h`
 }
 
+function getLevelDisplay(slot: SlotDetail): string {
+  if (slot.level?.label) return slot.level.label
+  if (slot.age_min != null && slot.age_max != null) return `Ages ${slot.age_min}–${slot.age_max}`
+  if (slot.age_min != null) return `Ages ${slot.age_min}+`
+  if (slot.custom_level) return slot.custom_level
+  return 'All levels'
+}
+
 export default function CentreSlots({ slots }: { slots: SlotDetail[] }) {
   const router = useRouter()
   const [selected, setSelected] = useState<string | null>(null)
   const [isLoggedIn, setIsLoggedIn] = useState(false)
   const [checking, setChecking] = useState(false)
   const [bookedSlotIds, setBookedSlotIds] = useState<Set<string>>(new Set())
+  const [levelFilter, setLevelFilter] = useState('')
+  const [subjectFilter, setSubjectFilter] = useState('')
+
+  // Extract unique subjects and levels for filter dropdowns
+  const uniqueSubjects = useMemo(() => {
+    const seen = new Map<string, string>()
+    for (const s of slots) {
+      if (s.subject?.id && s.subject?.name) seen.set(s.subject.id, s.subject.name)
+    }
+    return Array.from(seen.entries()).map(([id, name]) => ({ id, name }))
+  }, [slots])
+
+  const uniqueLevels = useMemo(() => {
+    const seen = new Map<string, string>()
+    for (const s of slots) {
+      if (s.level?.id && s.level?.label) {
+        seen.set(s.level.id, s.level.label)
+      } else if (s.custom_level) {
+        seen.set(`custom:${s.custom_level}`, s.custom_level)
+      }
+    }
+    return Array.from(seen.entries()).map(([id, label]) => ({ id, label }))
+  }, [slots])
+
+  // Filter slots based on dropdown selections
+  const filteredSlots = useMemo(() => {
+    return slots.filter((s) => {
+      if (levelFilter) {
+        if (levelFilter.startsWith('custom:')) {
+          if (s.custom_level !== levelFilter.slice(7)) return false
+        } else if (s.level?.id !== levelFilter) {
+          return false
+        }
+      }
+      if (subjectFilter && s.subject?.id !== subjectFilter) return false
+      return true
+    })
+  }, [slots, levelFilter, subjectFilter])
 
   const minFee =
-    slots.length > 0 ? Math.min(...slots.map((s) => Number(s.trial_fee))) : null
+    filteredSlots.length > 0 ? Math.min(...filteredSlots.map((s) => Number(s.trial_fee))) : null
 
   useEffect(() => {
     const supabase = createClient()
@@ -98,17 +144,50 @@ export default function CentreSlots({ slots }: { slots: SlotDetail[] }) {
   const distinctStreams = new Set(slots.map((s) => s.stream).filter(Boolean))
   const showStreamBadges = distinctStreams.size > 1
 
-  const slotsByDate = slots.reduce<Record<string, SlotDetail[]>>((acc, slot) => {
+  const slotsByDate = filteredSlots.reduce<Record<string, SlotDetail[]>>((acc, slot) => {
     acc[slot.date] = [...(acc[slot.date] ?? []), slot]
     return acc
   }, {})
   const sortedDates = Object.keys(slotsByDate).sort()
   const selectedSlot = slots.find((s) => s.id === selected)
+  const showFilters = uniqueSubjects.length > 1 || uniqueLevels.length > 1
 
   return (
     <>
+      {/* Filter dropdowns */}
+      {showFilters && (
+        <div className="flex gap-3 mb-5">
+          {uniqueLevels.length > 1 && (
+            <select
+              value={levelFilter}
+              onChange={(e) => { setLevelFilter(e.target.value); setSelected(null) }}
+              className="flex-1 text-sm border border-linen rounded-xl px-3 py-2.5 text-forest bg-white font-display focus:outline-none focus:ring-1 focus:ring-fern"
+            >
+              <option value="">All levels</option>
+              {uniqueLevels.map((l) => (
+                <option key={l.id} value={l.id}>{l.label}</option>
+              ))}
+            </select>
+          )}
+          {uniqueSubjects.length > 1 && (
+            <select
+              value={subjectFilter}
+              onChange={(e) => { setSubjectFilter(e.target.value); setSelected(null) }}
+              className="flex-1 text-sm border border-linen rounded-xl px-3 py-2.5 text-forest bg-white font-display focus:outline-none focus:ring-1 focus:ring-fern"
+            >
+              <option value="">All subjects</option>
+              {uniqueSubjects.map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+          )}
+        </div>
+      )}
+
       {sortedDates.length === 0 ? (
-        <p className="text-sm text-sage">No trial slots available right now. Check back soon.</p>
+        <p className="text-sm text-sage">
+          {(levelFilter || subjectFilter) ? 'No slots match your filter. Try a different selection.' : 'No trial slots available right now. Check back soon.'}
+        </p>
       ) : (
         <div className="space-y-6">
           {sortedDates.map((date) => {
@@ -128,7 +207,7 @@ export default function CentreSlots({ slots }: { slots: SlotDetail[] }) {
                 <div className="space-y-2">
                   {slotsByDate[date].map((slot) => {
                     const filled = slot.max_students - slot.spots_remaining
-                    const pct = Math.round((filled / slot.max_students) * 100)
+                    const pct = slot.max_students > 0 ? Math.round((filled / slot.max_students) * 100) : 0
                     const isFull = slot.spots_remaining === 0
                     const isLow = !isFull && slot.spots_remaining <= 2
                     const isSelected = selected === slot.id
@@ -170,7 +249,7 @@ export default function CentreSlots({ slots }: { slots: SlotDetail[] }) {
                               {formatTime(slot.start_time)} – {formatTime(slot.end_time)}
                             </p>
                             <p className="text-xs text-sage mt-1 flex items-center gap-1 flex-wrap">
-                              <span>{slot.subject.name} · {slot.level.label}</span>
+                              <span>{slot.subject?.name ?? 'Subject'} · {getLevelDisplay(slot)}</span>
                               {showStreamBadges && (() => {
                                 const sd = getStreamDisplay(slot.stream)
                                 return sd ? <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold border ${sd.color}`}>{sd.shortLabel}</span> : null
@@ -186,7 +265,7 @@ export default function CentreSlots({ slots }: { slots: SlotDetail[] }) {
                         {/* Urgency badge */}
                         {isFull ? (
                           <span className="inline-block text-xs font-display font-bold bg-red-100 text-red-600 px-2.5 py-1 rounded-full mb-2">
-                            Full
+                            Fully Booked
                           </span>
                         ) : isLow ? (
                           <span className="inline-block text-xs font-display font-bold bg-red-50 text-red-600 px-2.5 py-1 rounded-full mb-2 animate-pulse">
@@ -238,7 +317,7 @@ export default function CentreSlots({ slots }: { slots: SlotDetail[] }) {
               <div className="min-w-0">
                 <p className="text-xs text-sage">{bookedSlotIds.has(selectedSlot.id) ? 'You already have a booking' : 'Selected slot'}</p>
                 <p className="font-display font-bold text-forest text-sm leading-tight mt-0.5 truncate flex items-center gap-1">
-                  <span>{selectedSlot.subject.name} · {selectedSlot.level.label}</span>
+                  <span>{selectedSlot.subject?.name ?? 'Subject'} · {getLevelDisplay(selectedSlot)}</span>
                   {showStreamBadges && (() => {
                     const sd = getStreamDisplay(selectedSlot.stream)
                     return sd ? <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold border ${sd.color}`}>{sd.shortLabel}</span> : null
@@ -269,7 +348,7 @@ export default function CentreSlots({ slots }: { slots: SlotDetail[] }) {
                   </p>
                 )}
                 <p className="text-xs text-sage mt-0.5">
-                  {slots.length} slot{slots.length === 1 ? '' : 's'} available
+                  {filteredSlots.length} slot{filteredSlots.length === 1 ? '' : 's'} available
                 </p>
               </div>
               <span className="text-sm font-display font-semibold text-sage bg-paper border border-linen px-6 py-3.5 rounded-xl shrink-0">

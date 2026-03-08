@@ -78,3 +78,45 @@ export async function updateCentreFieldsAsAdmin(
 
   revalidateAll(centreId)
 }
+
+// ── Update teachers as admin (replace strategy) ──
+
+export async function updateTeachersAsAdmin(
+  centreId: string,
+  teachers: {
+    name: string
+    role: string
+    is_founder: boolean
+    qualifications: string
+    bio: string
+    years_experience: number | null
+    linkedin_url: string
+    students_taught: number | null
+  }[]
+) {
+  const supabase = createAdminClient()
+
+  const validTeachers = teachers.filter((t) => t.name.trim())
+
+  await supabase.from('teachers').delete().eq('centre_id', centreId)
+
+  if (validTeachers.length > 0) {
+    const { error } = await supabase.from('teachers').insert(
+      validTeachers.map((t, i) => ({
+        centre_id: centreId,
+        name: t.name.trim(),
+        role: t.role || null,
+        is_founder: t.is_founder,
+        qualifications: t.qualifications || null,
+        bio: t.bio || null,
+        years_experience: t.years_experience,
+        linkedin_url: t.linkedin_url || null,
+        students_taught: t.students_taught,
+        sort_order: t.is_founder ? 0 : i + 1,
+      }))
+    )
+    if (error) throw new Error('Failed to update teachers: ' + error.message)
+  }
+
+  revalidateAll(centreId)
+}

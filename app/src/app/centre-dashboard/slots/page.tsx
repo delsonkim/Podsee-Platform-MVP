@@ -12,6 +12,14 @@ function formatTime(t: string) {
   return t.slice(0, 5)
 }
 
+function getLevelDisplay(s: any): string {
+  if (s.levels?.label) return s.levels.label
+  if (s.age_min != null && s.age_max != null) return `Ages ${s.age_min}–${s.age_max}`
+  if (s.age_min != null) return `Ages ${s.age_min}+`
+  if (s.custom_level) return s.custom_level
+  return '—'
+}
+
 function CapacityBar({ max, remaining }: { max: number; remaining: number }) {
   const booked = max - remaining
   const pct = max > 0 ? (booked / max) * 100 : 0
@@ -52,7 +60,7 @@ function SlotTable({ slots, emptyMessage }: { slots: any[]; emptyMessage: string
           {slots.map((s: any) => (
             <tr key={s.id} className="hover:bg-gray-50">
               <td className="px-4 py-3 text-gray-800 font-medium">{s.subjects?.name ?? '—'}</td>
-              <td className="px-4 py-3 text-gray-600">{s.levels?.label ?? '—'}</td>
+              <td className="px-4 py-3 text-gray-600">{getLevelDisplay(s)}</td>
               <td className="px-4 py-3">
                 {(() => {
                   const sd = getStreamDisplay(s.stream)
@@ -105,7 +113,7 @@ function DraftSlotTable({ slots }: { slots: any[] }) {
                 <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-200 text-amber-800">Pending</span>
               </td>
               <td className="px-4 py-3 text-gray-800 font-medium">{s.subjects?.name ?? '—'}</td>
-              <td className="px-4 py-3 text-gray-600">{s.levels?.label ?? '—'}</td>
+              <td className="px-4 py-3 text-gray-600">{getLevelDisplay(s)}</td>
               <td className="px-4 py-3">
                 {(() => {
                   const sd = getStreamDisplay(s.stream)
@@ -134,7 +142,7 @@ export default async function CentreSlotsPage() {
   const [{ data: upcoming }, { data: past }, { data: drafts }, { data: subjects }, { data: levels }] = await Promise.all([
     supabase
       .from('trial_slots')
-      .select('id, date, start_time, end_time, trial_fee, max_students, spots_remaining, stream, subjects(name), levels(label)')
+      .select('id, date, start_time, end_time, trial_fee, max_students, spots_remaining, stream, custom_level, age_min, age_max, subjects(name), levels(label)')
       .eq('centre_id', centreId)
       .eq('is_draft', false)
       .gte('date', today)
@@ -142,7 +150,7 @@ export default async function CentreSlotsPage() {
       .order('start_time', { ascending: true }),
     supabase
       .from('trial_slots')
-      .select('id, date, start_time, end_time, trial_fee, max_students, spots_remaining, stream, subjects(name), levels(label)')
+      .select('id, date, start_time, end_time, trial_fee, max_students, spots_remaining, stream, custom_level, age_min, age_max, subjects(name), levels(label)')
       .eq('centre_id', centreId)
       .eq('is_draft', false)
       .lt('date', today)
@@ -150,7 +158,7 @@ export default async function CentreSlotsPage() {
       .limit(20),
     supabase
       .from('trial_slots')
-      .select('id, date, start_time, end_time, trial_fee, max_students, stream, subjects(name), levels(label)')
+      .select('id, date, start_time, end_time, trial_fee, max_students, stream, custom_level, age_min, age_max, subjects(name), levels(label)')
       .eq('centre_id', centreId)
       .eq('is_draft', true)
       .order('date', { ascending: true }),

@@ -3,8 +3,9 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import type { BookingStatus } from '@/types/database'
 import Link from 'next/link'
 import InlineStatusActions from './bookings/InlineStatusActions'
+import CancellationBanner from './CancellationBanner'
 
-const STATUSES: BookingStatus[] = ['pending', 'confirmed', 'completed', 'converted', 'no_show', 'cancelled']
+const STATUSES: BookingStatus[] = ['confirmed', 'completed', 'converted', 'no_show', 'cancelled']
 
 async function getStats(centreId: string) {
   try {
@@ -12,7 +13,7 @@ async function getStats(centreId: string) {
     const now = new Date()
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
 
-    const [statusCounts, thisMonthResult, recentBookings, upcomingSlots] = await Promise.all([
+    const [statusCounts, thisMonthResult, recentBookings, upcomingSlots, parentCancellations] = await Promise.all([
       Promise.all(
         STATUSES.map(async (status) => {
           const { count } = await supabase
@@ -42,6 +43,14 @@ async function getStats(centreId: string) {
         .order('date', { ascending: true })
         .order('start_time', { ascending: true })
         .limit(5),
+      supabase
+        .from('bookings')
+        .select('id, booking_ref, parent_name_at_booking, child_name_at_booking, cancelled_at, cancel_reason, trial_slots(date, start_time, subjects(name))')
+        .eq('centre_id', centreId)
+        .eq('cancelled_by', 'parent')
+        .gte('cancelled_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
+        .order('cancelled_at', { ascending: false })
+        .limit(10),
     ])
 
     const totalBookings = statusCounts.reduce((sum, { count }) => sum + count, 0)
@@ -52,10 +61,11 @@ async function getStats(centreId: string) {
       thisMonth: thisMonthResult.count ?? 0,
       recentBookings: recentBookings.data ?? [],
       upcomingSlots: upcomingSlots.data ?? [],
+      parentCancellations: parentCancellations.data ?? [],
     }
   } catch {
     const empty = { pending: 0, confirmed: 0, completed: 0, converted: 0, no_show: 0, cancelled: 0 } as Record<BookingStatus, number>
-    return { statusCounts: empty, totalBookings: 0, thisMonth: 0, recentBookings: [], upcomingSlots: [] }
+    return { statusCounts: empty, totalBookings: 0, thisMonth: 0, recentBookings: [], upcomingSlots: [], parentCancellations: [] }
   }
 }
 
@@ -78,7 +88,7 @@ function formatTime(t: string) {
 
 export default async function CentreDashboardOverview() {
   const { centreId } = await requireCentreUser()
-  const { statusCounts, totalBookings, thisMonth, recentBookings, upcomingSlots } = await getStats(centreId)
+  const { statusCounts, totalBookings, thisMonth, recentBookings, upcomingSlots, parentCancellations } = await getStats(centreId)
 
   return (
     <div className="max-w-5xl space-y-8">
@@ -86,6 +96,10 @@ export default async function CentreDashboardOverview() {
         <h1 className="text-2xl font-semibold text-gray-900">Overview</h1>
         <p className="text-sm text-gray-500 mt-1">Your centre's bookings and activity from Podsee.</p>
       </div>
+
+      {parentCancellations.length > 0 && (
+        <CancellationBanner cancellations={parentCancellations} />
+      )}
 
       {/* Leads summary */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -100,8 +114,7 @@ export default async function CentreDashboardOverview() {
       </div>
 
       {/* Status breakdown */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        <StatCard label="Pending" count={statusCounts.pending} color="text-amber-600" />
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
         <StatCard label="Confirmed" count={statusCounts.confirmed} color="text-blue-600" />
         <StatCard label="Completed" count={statusCounts.completed} color="text-purple-600" />
         <StatCard label="Converted" count={statusCounts.converted} color="text-green-600" />

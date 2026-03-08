@@ -5,7 +5,6 @@ import { BOOKING_STATUS_COLOR, BOOKING_STATUS_LABEL, type BookingStatus } from '
 
 const TABS: { label: string; value: string }[] = [
   { label: 'All', value: 'all' },
-  { label: 'Pending', value: 'pending' },
   { label: 'Confirmed', value: 'confirmed' },
   { label: 'Completed', value: 'completed' },
   { label: 'Converted', value: 'converted' },

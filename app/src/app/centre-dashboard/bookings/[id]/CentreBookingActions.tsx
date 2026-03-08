@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useTransition, memo } from 'react'
-import { centreCancelBooking, centreMarkAttended, centreMarkNoShow, centreMarkEnrolled } from './actions'
+import { centreCancelBooking, centreMarkAttended, centreMarkNoShow, centreMarkEnrolled, centreMarkNotConverted } from './actions'
 
 export default memo(function CentreBookingActions({
   bookingId,
@@ -16,6 +16,7 @@ export default memo(function CentreBookingActions({
   const [showCancel, setShowCancel] = useState(false)
   const [showAttendanceConfirm, setShowAttendanceConfirm] = useState<'attended' | 'no_show' | null>(null)
   const [showEnrolledConfirm, setShowEnrolledConfirm] = useState(false)
+  const [showNotConvertedConfirm, setShowNotConvertedConfirm] = useState(false)
   const [cancelReason, setCancelReason] = useState('')
   const [error, setError] = useState<string | null>(null)
 
@@ -71,7 +72,7 @@ export default memo(function CentreBookingActions({
       )}
 
       {/* Default: show action buttons */}
-      {!showCancel && !showAttendanceConfirm && !showEnrolledConfirm && (
+      {!showCancel && !showAttendanceConfirm && !showEnrolledConfirm && !showNotConvertedConfirm && (
         <div className="flex gap-2 flex-wrap">
           {status === 'confirmed' && isTrialDay && (
             <>
@@ -101,13 +102,22 @@ export default memo(function CentreBookingActions({
             </button>
           )}
           {status === 'completed' && (
-            <button
-              onClick={() => setShowEnrolledConfirm(true)}
-              disabled={isPending}
-              className="px-3 py-1.5 rounded-md text-sm font-medium bg-green-600 text-white hover:bg-green-700 transition-colors disabled:opacity-50"
-            >
-              Mark Enrolled
-            </button>
+            <>
+              <button
+                onClick={() => setShowEnrolledConfirm(true)}
+                disabled={isPending}
+                className="px-3 py-1.5 rounded-md text-sm font-medium bg-green-600 text-white hover:bg-green-700 transition-colors disabled:opacity-50"
+              >
+                Mark Enrolled
+              </button>
+              <button
+                onClick={() => setShowNotConvertedConfirm(true)}
+                disabled={isPending}
+                className="px-3 py-1.5 rounded-md text-sm font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors disabled:opacity-50"
+              >
+                Did Not Convert
+              </button>
+            </>
           )}
         </div>
       )}
@@ -215,6 +225,40 @@ export default memo(function CentreBookingActions({
             </button>
             <button
               onClick={() => setShowEnrolledConfirm(false)}
+              disabled={isPending}
+              className="px-3 py-1.5 rounded-md text-sm font-medium text-gray-600 hover:text-gray-800 transition-colors"
+            >
+              Go back
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Not converted confirmation */}
+      {showNotConvertedConfirm && (
+        <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-3">
+          <p className="text-sm text-gray-800 font-medium">Confirm this child did not convert?</p>
+          <p className="text-xs text-gray-500">This records that the child attended the trial but did not enrol.</p>
+          <div className="flex gap-2">
+            <button
+              onClick={() => {
+                setError(null)
+                startTransition(async () => {
+                  try {
+                    await centreMarkNotConverted(bookingId)
+                  } catch (e: any) {
+                    setError(e.message)
+                  }
+                  setShowNotConvertedConfirm(false)
+                })
+              }}
+              disabled={isPending}
+              className="px-3 py-1.5 rounded-md text-sm font-medium bg-gray-600 text-white hover:bg-gray-700 transition-colors disabled:opacity-50"
+            >
+              {isPending ? 'Saving…' : 'Yes, did not convert'}
+            </button>
+            <button
+              onClick={() => setShowNotConvertedConfirm(false)}
               disabled={isPending}
               className="px-3 py-1.5 rounded-md text-sm font-medium text-gray-600 hover:text-gray-800 transition-colors"
             >

@@ -5,7 +5,6 @@ import InlineStatusActions from './InlineStatusActions'
 
 const TABS: { label: string; value: string }[] = [
   { label: 'All', value: 'all' },
-  { label: 'Pending', value: 'pending' },
   { label: 'Confirmed', value: 'confirmed' },
   { label: 'Completed', value: 'completed' },
   { label: 'Converted', value: 'converted' },

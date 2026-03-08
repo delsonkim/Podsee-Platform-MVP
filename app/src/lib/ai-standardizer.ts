@@ -21,7 +21,7 @@ export interface StandardizedPricingRow {
   level_label: string | null
   level_id: string | null
   stream: string | null
-  trial_type: 'free' | 'discounted' | 'same_as_regular' | 'multi_lesson'
+  trial_type: 'free' | 'same_as_regular'
   trial_fee: number
   trial_lessons: number
   regular_fee: number

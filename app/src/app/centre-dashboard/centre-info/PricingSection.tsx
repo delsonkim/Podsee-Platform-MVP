@@ -345,9 +345,7 @@ export default function PricingSection({
                   className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:ring-1 focus:ring-gray-400 focus:border-gray-400 outline-none"
                 >
                   <option value="free">Free trial</option>
-                  <option value="discounted">Discounted trial</option>
                   <option value="same_as_regular">Same as regular</option>
-                  <option value="multi_lesson">Multi-lesson trial</option>
                 </select>
               </div>
 

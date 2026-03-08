@@ -8,6 +8,8 @@ import {
   ProfileEditForm,
   LocationEditForm,
   PoliciesEditForm,
+  ContactLinksEditForm,
+  TeachersEditForm,
 } from './AdminEditForms'
 
 const FIELD_LABELS: Record<string, string> = {
@@ -49,9 +51,10 @@ export default async function AdminCentreEditPage({ params }: { params: Promise<
 
   if (!centre) notFound()
 
-  const [pricingRows, structuredPolicies] = await Promise.all([
+  const [pricingRows, structuredPolicies, { data: teachersData }] = await Promise.all([
     getCentrePricing(centre.id),
     getCentrePolicies(centre.id),
+    supabase.from('teachers').select('name, role, is_founder, qualifications, bio, years_experience, linkedin_url, students_taught, sort_order').eq('centre_id', id).order('sort_order'),
   ])
 
   const c = centre as any
@@ -150,6 +153,32 @@ export default async function AdminCentreEditPage({ params }: { params: Promise<
           payment_terms: centre.payment_terms ?? '',
           other_policies: c.other_policies ?? '',
         }}
+      />
+
+      <ContactLinksEditForm
+        centreId={centre.id}
+        initial={{
+          website_url: c.website_url ?? '',
+          instagram_url: c.instagram_url ?? '',
+          tiktok_url: c.tiktok_url ?? '',
+          whatsapp_number: c.whatsapp_number ?? '',
+          phone_number: c.phone_number ?? '',
+          google_maps_url: c.google_maps_url ?? '',
+        }}
+      />
+
+      <TeachersEditForm
+        centreId={centre.id}
+        initial={(teachersData ?? []).map((t: any) => ({
+          name: t.name ?? '',
+          role: t.role ?? '',
+          is_founder: t.is_founder ?? false,
+          qualifications: t.qualifications ?? '',
+          bio: t.bio ?? '',
+          years_experience: t.years_experience ?? null,
+          linkedin_url: t.linkedin_url ?? '',
+          students_taught: t.students_taught ?? null,
+        }))}
       />
 
       {/* Section D: Pricing (read-only) */}

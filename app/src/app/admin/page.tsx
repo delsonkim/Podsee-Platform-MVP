@@ -7,7 +7,7 @@ async function getStats() {
   try {
     const supabase = createAdminClient()
 
-    const statuses: BookingStatus[] = ['pending', 'confirmed', 'completed', 'converted', 'no_show', 'cancelled']
+    const statuses: BookingStatus[] = ['confirmed', 'completed', 'converted', 'no_show', 'cancelled']
 
     const [statusCounts, flaggedResult, recentBookings] = await Promise.all([
       Promise.all(
@@ -122,8 +122,7 @@ export default async function AdminDashboard() {
       )}
 
       {/* Stats grid */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        <StatCard label="Pending" count={statusCounts.pending} color="text-amber-600" />
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
         <StatCard label="Confirmed" count={statusCounts.confirmed} color="text-blue-600" />
         <StatCard label="Completed" count={statusCounts.completed} color="text-purple-600" />
         <StatCard label="Converted" count={statusCounts.converted} color="text-green-600" />

@@ -10,8 +10,15 @@ export interface AIField<T> {
   raw_text?: string
 }
 
+export interface SubjectWebSuggestion {
+  suggested_match_id: string | null
+  suggested_name: string
+  web_context: string
+  is_new_subject: boolean
+}
+
 export interface AIParsedSlot {
-  subject: AIField<string>
+  subject: AIField<string> & { web_suggestion?: SubjectWebSuggestion }
   level: AIField<string>
   stream: AIField<string | null>
   age_min: AIField<number | null>

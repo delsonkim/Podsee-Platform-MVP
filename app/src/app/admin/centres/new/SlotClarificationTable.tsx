@@ -610,8 +610,13 @@ function SubjectCell({
           className="w-full text-xs border border-gray-200 rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-gray-900/20 focus:border-gray-400"
         />
       )}
-      {field.raw_text && field.confidence === 'inferred' && (
+      {field.raw_text && field.confidence === 'inferred' && !field.web_suggestion && (
         <span className="text-[10px] text-gray-400">from &ldquo;{field.raw_text}&rdquo;</span>
+      )}
+      {field.web_suggestion && (
+        <span className="text-[10px] text-blue-500" title={field.web_suggestion.web_context}>
+          {field.web_suggestion.is_new_subject ? 'Looks like a new subject' : `Matched: ${field.web_suggestion.suggested_name}`} — verified
+        </span>
       )}
     </div>
   )

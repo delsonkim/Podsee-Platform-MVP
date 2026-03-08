@@ -4,7 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { sendCentreInvite } from '@/lib/email'
-import { parseScheduleWithAI, parseScheduleImageWithAI } from '@/lib/ai-parser'
+import { parseScheduleWithAI, parseScheduleImageWithAI, verifyUnknownSubjects } from '@/lib/ai-parser'
 import type { AIParseResult } from '@/types/ai-parser'
 import { fetchCorrections, saveCorrections, type CorrectionInput } from '@/lib/parse-corrections'
 import { standardizePolicies, standardizePoliciesFromImage } from '@/lib/ai-standardizer'
@@ -32,6 +32,8 @@ export interface TeacherInput {
   qualifications: string
   bio: string
   years_experience: number | null
+  linkedin_url: string
+  students_taught: number | null
   subject_ids: string[]
   level_ids: string[]
 }
@@ -62,10 +64,14 @@ export async function createMinimalCentre(payload: {
   nearest_mrt: string
   years_operating: number | null
   image_urls: string[]
-  trial_type: 'free' | 'paid'
-  paynow_qr_image_url: string | null
   trial_commission_rate: number
   conversion_commission_rate: number
+  website_url?: string
+  instagram_url?: string
+  tiktok_url?: string
+  whatsapp_number?: string
+  phone_number?: string
+  google_maps_url?: string
 }): Promise<{ centreId: string } | { error: string }> {
   const supabase = createAdminClient()
 
@@ -91,10 +97,14 @@ export async function createMinimalCentre(payload: {
       nearest_mrt: payload.nearest_mrt || null,
       years_operating: payload.years_operating,
       image_urls: payload.image_urls,
-      trial_type: payload.trial_type,
-      paynow_qr_image_url: payload.paynow_qr_image_url,
       trial_commission_rate: payload.trial_commission_rate,
       conversion_commission_rate: payload.conversion_commission_rate,
+      website_url: payload.website_url || null,
+      instagram_url: payload.instagram_url || null,
+      tiktok_url: payload.tiktok_url || null,
+      whatsapp_number: payload.whatsapp_number || null,
+      phone_number: payload.phone_number || null,
+      google_maps_url: payload.google_maps_url || null,
       is_active: false,
       is_paused: false,
     })
@@ -190,6 +200,8 @@ export async function updateCentreStep(
             qualifications: teacher.qualifications || null,
             bio: teacher.bio || null,
             years_experience: teacher.years_experience,
+            linkedin_url: teacher.linkedin_url || null,
+            students_taught: teacher.students_taught,
             sort_order: teacher.is_founder ? 0 : 1,
           }))
         )
@@ -221,7 +233,7 @@ export async function addSlotsForCentre(
 ): Promise<{ success: true } | { error: string }> {
   const supabase = createAdminClient()
 
-  const validSlots = slots.filter((s) => s.subject_id && s.date && s.start_time && s.end_time)
+  const validSlots = slots.filter((s) => s.subject_id && s.date && s.start_time && s.end_time && s.max_students >= 1)
   if (validSlots.length === 0) return { error: 'No valid slots to import.' }
 
   const { error: slotError } = await supabase.from('trial_slots').insert(
@@ -435,6 +447,8 @@ export async function createCentre(formPayload: {
           qualifications: teacher.qualifications || null,
           bio: teacher.bio || null,
           years_experience: teacher.years_experience,
+          linkedin_url: teacher.linkedin_url || null,
+          students_taught: teacher.students_taught,
           sort_order: teacher.is_founder ? 0 : 1,
         }))
       )
@@ -557,6 +571,38 @@ export async function createCentre(formPayload: {
   redirect('/admin/centres')
 }
 
+async function attachWebSuggestions(result: AIParseResult, subjects: { id: string; name: string }[]): Promise<AIParseResult> {
+  const unknownTexts = result.slots
+    .filter((s) => s.subject.confidence === 'needs_review' && !s.subject.match_id)
+    .map((s) => s.subject.raw_text ?? s.subject.value)
+    .filter(Boolean) as string[]
+
+  if (unknownTexts.length === 0) return result
+
+  const suggestions = await verifyUnknownSubjects(unknownTexts, subjects)
+  if (suggestions.size === 0) return result
+
+  return {
+    ...result,
+    slots: result.slots.map((slot) => {
+      const key = (slot.subject.raw_text ?? slot.subject.value)?.trim().toLowerCase()
+      const suggestion = key ? suggestions.get(key) : undefined
+      if (!suggestion) return slot
+      return {
+        ...slot,
+        subject: {
+          ...slot.subject,
+          ...(suggestion.suggested_match_id ? {
+            match_id: suggestion.suggested_match_id,
+            confidence: 'inferred' as const,
+          } : {}),
+          web_suggestion: suggestion,
+        },
+      }
+    }),
+  }
+}
+
 export async function parseSchedule(
   rawText: string,
   centreId?: string,
@@ -570,7 +616,8 @@ export async function parseSchedule(
     fetchCorrections(centreId),
   ])
 
-  return parseScheduleWithAI(rawText, subjects ?? [], levels ?? [], { weeksAhead, corrections })
+  const result = await parseScheduleWithAI(rawText, subjects ?? [], levels ?? [], { weeksAhead, corrections })
+  return attachWebSuggestions(result, subjects ?? [])
 }
 
 export async function parseScheduleImage(
@@ -587,7 +634,8 @@ export async function parseScheduleImage(
     fetchCorrections(centreId),
   ])
 
-  return parseScheduleImageWithAI(base64Data, mediaType, subjects ?? [], levels ?? [], { weeksAhead, corrections })
+  const result = await parseScheduleImageWithAI(base64Data, mediaType, subjects ?? [], levels ?? [], { weeksAhead, corrections })
+  return attachWebSuggestions(result, subjects ?? [])
 }
 
 export async function saveParseCorrections(corrections: CorrectionInput[]): Promise<void> {
@@ -616,6 +664,8 @@ export async function savePricingAction(
     promotionsText: string | null
     additionalFees: string | null
     billingRaw: string | null
+    trialType?: 'free' | 'paid'
+    paynowQrImageUrl?: string | null
   }
 ): Promise<{ success: true } | { error: string }> {
   const supabase = createAdminClient()
@@ -628,12 +678,24 @@ export async function savePricingAction(
     await autoFillSlotTrialFees(supabase, centreId, data.pricing)
   }
 
-  // Save promotions_text directly on centres table
-  const { error: promoError } = await supabase
+  // If trial type is free, zero out ALL slot trial fees for this centre
+  if (data.trialType === 'free') {
+    await supabase
+      .from('trial_slots')
+      .update({ trial_fee: 0 })
+      .eq('centre_id', centreId)
+  }
+
+  // Save trial_type, paynow_qr, and promotions_text on centres table
+  const centreUpdate: Record<string, unknown> = { promotions_text: data.promotionsText }
+  if (data.trialType !== undefined) centreUpdate.trial_type = data.trialType
+  if (data.paynowQrImageUrl !== undefined) centreUpdate.paynow_qr_image_url = data.paynowQrImageUrl
+
+  const { error: centreError } = await supabase
     .from('centres')
-    .update({ promotions_text: data.promotionsText })
+    .update(centreUpdate)
     .eq('id', centreId)
-  if (promoError) return { error: promoError.message }
+  if (centreError) return { error: centreError.message }
 
   revalidatePath('/admin/centres')
   return { success: true }
@@ -667,7 +729,7 @@ export async function loadPricingDataAction(centreId: string) {
   ])
   const { data: centre } = await supabase
     .from('centres')
-    .select('additional_fees, promotions_text')
+    .select('additional_fees, promotions_text, trial_type, paynow_qr_image_url')
     .eq('id', centreId)
     .single()
 
@@ -677,6 +739,8 @@ export async function loadPricingDataAction(centreId: string) {
     pairs,
     additionalFees: centre?.additional_fees ?? null,
     promotionsText: centre?.promotions_text ?? null,
+    trialType: (centre?.trial_type as 'free' | 'paid') ?? 'free',
+    paynowQrImageUrl: (centre?.paynow_qr_image_url as string | null) ?? null,
   }
 }
 

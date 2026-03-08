@@ -109,11 +109,7 @@ export async function autoFillSlotTrialFees(
         trialFee = 0
         break
       case 'same_as_regular':
-        trialFee = row.regular_fee
-        break
-      case 'discounted':
-      case 'multi_lesson':
-        trialFee = row.trial_fee
+        trialFee = row.trial_fee > 0 ? row.trial_fee : row.regular_fee
         break
       default:
         trialFee = 0

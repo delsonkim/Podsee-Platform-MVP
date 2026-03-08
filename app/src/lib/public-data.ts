@@ -15,7 +15,7 @@ export type CentreSummary = Centre & {
 
 export type SlotDetail = TrialSlot & {
   subject: Subject
-  level: Level
+  level: Level | null
   centre: Centre
 }
 
@@ -27,7 +27,11 @@ export type Teacher = {
   qualifications: string | null
   bio: string | null
   years_experience: number | null
+  linkedin_url: string | null
+  students_taught: number | null
   sort_order: number
+  subjects: string[]
+  levels: string[]
 }
 
 export type PublicReview = {
@@ -106,7 +110,7 @@ export async function getCentreBySlug(slug: string): Promise<CentreDetail | null
           centre_subjects(subjects(*)),
           centre_levels(levels(*)),
           trial_slots!left(*, subjects(*), levels(*)),
-          teachers(*)
+          teachers(*, teacher_subjects(subjects(name)), teacher_levels(levels(label)))
         `)
         .eq('id', idRow.id)
         .gte('trial_slots.date', today)
@@ -150,6 +154,11 @@ export async function getCentreBySlug(slug: string): Promise<CentreDetail | null
 
     const teachers: Teacher[] = ((d.teachers as any[]) ?? [])
       .sort((a: any, b: any) => (a.sort_order ?? 99) - (b.sort_order ?? 99))
+      .map((t: any) => ({
+        ...t,
+        subjects: (t.teacher_subjects ?? []).map((ts: any) => ts.subjects?.name).filter(Boolean),
+        levels: (t.teacher_levels ?? []).map((tl: any) => tl.levels?.label).filter(Boolean),
+      }))
 
     const reviews: PublicReview[] = ((reviewData as any[]) ?? []).map((r: any) => ({
       id: r.id,

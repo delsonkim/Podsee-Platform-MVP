@@ -1,4 +1,4 @@
-export type BookingStatus = 'pending' | 'confirmed' | 'completed' | 'converted' | 'no_show' | 'cancelled'
+export type BookingStatus = 'confirmed' | 'completed' | 'converted' | 'no_show' | 'cancelled'
 export type ParentReportedEnrolment = 'enrolled' | 'not_enrolled'
 export type CommissionStatus = 'pending' | 'invoiced' | 'paid' | 'overdue' | 'waived'
 export type RewardStatus = 'pending' | 'approved' | 'paid' | 'rejected'
@@ -7,7 +7,7 @@ export type ReviewStatus = 'pending_approval' | 'approved' | 'rejected'
 export type LevelGroup = 'primary' | 'secondary' | 'jc' | 'other'
 export type CentreUserRole = 'owner' | 'staff'
 export type AdminUserRole = 'admin' | 'superadmin'
-export type TrialType = 'free' | 'discounted' | 'same_as_regular' | 'multi_lesson'
+export type TrialType = 'free' | 'same_as_regular'
 
 export interface Subject {
   id: string
@@ -73,6 +73,12 @@ export interface Centre {
   conversion_commission_rate: number
   additional_fees: string | null
   promotions_text: string | null
+  website_url: string | null
+  instagram_url: string | null
+  tiktok_url: string | null
+  whatsapp_number: string | null
+  phone_number: string | null
+  google_maps_url: string | null
   draft_data: Record<string, unknown> | null
   has_pending_changes: boolean
   is_active: boolean
@@ -239,7 +245,6 @@ export interface CentrePolicy {
 // ── Status display helpers ─────────────────────────────────────
 
 export const BOOKING_STATUS_LABEL: Record<BookingStatus, string> = {
-  pending: 'Pending',
   confirmed: 'Confirmed',
   completed: 'Completed',
   converted: 'Converted',
@@ -248,7 +253,6 @@ export const BOOKING_STATUS_LABEL: Record<BookingStatus, string> = {
 }
 
 export const BOOKING_STATUS_COLOR: Record<BookingStatus, string> = {
-  pending: 'bg-amber-100 text-amber-800',
   confirmed: 'bg-blue-100 text-blue-800',
   completed: 'bg-purple-100 text-purple-800',
   converted: 'bg-green-100 text-green-800',

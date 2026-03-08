@@ -32,9 +32,7 @@ type PricingRow = CentrePricing & { subject_name: string; level_label: string | 
 function getTrialFeeFromPricing(row: PricingRow): number {
   switch (row.trial_type) {
     case 'free': return 0
-    case 'same_as_regular': return row.regular_fee
-    case 'discounted':
-    case 'multi_lesson': return row.trial_fee
+    case 'same_as_regular': return row.trial_fee > 0 ? row.trial_fee : row.regular_fee
     default: return 0
   }
 }
@@ -42,9 +40,7 @@ function getTrialFeeFromPricing(row: PricingRow): number {
 function getTrialFeeHint(row: PricingRow): string {
   switch (row.trial_type) {
     case 'free': return 'Free trial (from your pricing)'
-    case 'same_as_regular': return `S$${row.regular_fee} — same as regular (from your pricing)`
-    case 'discounted': return `S$${row.trial_fee} — discounted trial (from your pricing)`
-    case 'multi_lesson': return `S$${row.trial_fee} — multi-lesson trial (from your pricing)`
+    case 'same_as_regular': return `S$${row.trial_fee > 0 ? row.trial_fee : row.regular_fee} — same as regular (from your pricing)`
     default: return ''
   }
 }
@@ -68,6 +64,10 @@ export default function AddSlotSection({
   // ── Single slot form state ──
   const [subjectId, setSubjectId] = useState('')
   const [levelId, setLevelId] = useState('')
+  const [levelMode, setLevelMode] = useState<'standard' | 'age' | 'custom'>('standard')
+  const [ageMin, setAgeMin] = useState('')
+  const [ageMax, setAgeMax] = useState('')
+  const [customLevel, setCustomLevel] = useState('')
   const [date, setDate] = useState('')
   const [startTime, setStartTime] = useState('')
   const [endTime, setEndTime] = useState('')
@@ -78,10 +78,13 @@ export default function AddSlotSection({
   const [stream, setStream] = useState('')
 
   // ── Auto-fill trial fee from pricing ──
-  function lookupAndFillTrialFee(sid: string, lid: string) {
+  function lookupAndFillTrialFee(sid: string, lid: string, str: string = stream) {
     if (!sid) { setTrialFeeHint(null); return }
+    // Try exact match first (subject + level + stream), then without stream
     const match = pricingRows.find(
-      (r) => r.subject_id === sid && (r.level_id === (lid || null))
+      (r) => r.subject_id === sid && r.level_id === (lid || null) && r.stream === (str || null)
+    ) ?? pricingRows.find(
+      (r) => r.subject_id === sid && r.level_id === (lid || null) && !r.stream
     )
     if (match) {
       const fee = getTrialFeeFromPricing(match)
@@ -106,6 +109,10 @@ export default function AddSlotSection({
   function resetSingleForm() {
     setSubjectId('')
     setLevelId('')
+    setLevelMode('standard')
+    setAgeMin('')
+    setAgeMax('')
+    setCustomLevel('')
     setStream('')
     setDate('')
     setStartTime('')
@@ -153,15 +160,23 @@ export default function AddSlotSection({
       setError('Subject, date, start time, and end time are required.')
       return
     }
+    if (levelMode === 'custom' && !customLevel.trim()) {
+      setError('Please enter a custom level label (e.g. White Belt, Grade 1).')
+      return
+    }
+    if (levelMode === 'age' && !ageMin) {
+      setError('Please enter at least a minimum age.')
+      return
+    }
 
     startTransition(async () => {
       const result = await addSingleDraftSlot({
         subject_id: subjectId,
-        level_id: levelId || null,
-        age_min: null,
-        age_max: null,
-        custom_level: null,
-        stream: stream || null,
+        level_id: levelMode === 'standard' ? (levelId || null) : null,
+        age_min: levelMode === 'age' && ageMin ? parseInt(ageMin) : null,
+        age_max: levelMode === 'age' && ageMax ? parseInt(ageMax) : null,
+        custom_level: levelMode === 'custom' && customLevel ? customLevel.trim() : null,
+        stream: levelMode === 'standard' && stream ? stream : null,
         date,
         start_time: startTime,
         end_time: endTime,
@@ -260,39 +275,95 @@ export default function AddSlotSection({
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Level</label>
-              <select
-                value={levelId}
-                onChange={(e) => handleLevelChange(e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400"
-              >
-                <option value="">Select level...</option>
-                {Object.entries(levelGroups).map(([group, lvls]) => (
-                  <optgroup key={group} label={group}>
-                    {lvls.map((l) => (
-                      <option key={l.id} value={l.id}>{l.label}</option>
-                    ))}
-                  </optgroup>
+              {/* Level mode tabs */}
+              <div className="flex gap-1 bg-gray-50 rounded-lg p-0.5 mb-2">
+                {([
+                  ['standard', 'School Level'],
+                  ['age', 'Age Range'],
+                  ['custom', 'Custom'],
+                ] as const).map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => { setLevelMode(key); setLevelId(''); setStream(''); setAgeMin(''); setAgeMax(''); setCustomLevel('') }}
+                    className={`flex-1 text-[11px] font-medium py-1.5 rounded-md transition-colors ${
+                      levelMode === key ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400 hover:text-gray-600'
+                    }`}
+                  >
+                    {label}
+                  </button>
                 ))}
-              </select>
-            </div>
-            {/* Show stream dropdown when a secondary level is selected */}
-            {levelId && levels.find((l) => l.id === levelId)?.level_group === 'Secondary' && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Stream / Band</label>
-                <select
-                  value={stream}
-                  onChange={(e) => setStream(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400"
-                >
-                  <option value="">No stream</option>
-                  <option value="G3">G3 (Express)</option>
-                  <option value="G2">G2 (Normal Academic)</option>
-                  <option value="G1">G1 (Foundational)</option>
-                  <option value="IP">IP</option>
-                  <option value="IB">IB</option>
-                </select>
               </div>
-            )}
+              {/* Standard level dropdown */}
+              {levelMode === 'standard' && (
+                <>
+                  <select
+                    value={levelId}
+                    onChange={(e) => handleLevelChange(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400"
+                  >
+                    <option value="">Select level...</option>
+                    {Object.entries(levelGroups).map(([group, lvls]) => (
+                      <optgroup key={group} label={group}>
+                        {lvls.map((l) => (
+                          <option key={l.id} value={l.id}>{l.label}</option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
+                  {/* Stream dropdown for secondary levels */}
+                  {levelId && levels.find((l) => l.id === levelId)?.level_group === 'Secondary' && (
+                    <select
+                      value={stream}
+                      onChange={(e) => { setStream(e.target.value); lookupAndFillTrialFee(subjectId, levelId, e.target.value) }}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-2 focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400"
+                    >
+                      <option value="">No stream</option>
+                      <option value="G3">G3 (Express)</option>
+                      <option value="G2">G2 (Normal Academic)</option>
+                      <option value="G1">G1 (Foundational)</option>
+                      <option value="IP">IP</option>
+                      <option value="IB">IB</option>
+                    </select>
+                  )}
+                </>
+              )}
+              {/* Age range inputs */}
+              {levelMode === 'age' && (
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-500">Ages</span>
+                  <input
+                    type="number"
+                    min="3"
+                    max="25"
+                    value={ageMin}
+                    onChange={(e) => setAgeMin(e.target.value)}
+                    placeholder="Min"
+                    className="w-20 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400"
+                  />
+                  <span className="text-sm text-gray-400">to</span>
+                  <input
+                    type="number"
+                    min="3"
+                    max="25"
+                    value={ageMax}
+                    onChange={(e) => setAgeMax(e.target.value)}
+                    placeholder="Max"
+                    className="w-20 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400"
+                  />
+                </div>
+              )}
+              {/* Custom level input */}
+              {levelMode === 'custom' && (
+                <input
+                  type="text"
+                  value={customLevel}
+                  onChange={(e) => setCustomLevel(e.target.value)}
+                  placeholder="e.g. White Belt, Grade 1, Beginner"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400"
+                />
+              )}
+            </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Date <span className="text-red-500">*</span>

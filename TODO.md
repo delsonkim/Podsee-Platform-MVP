@@ -346,7 +346,7 @@ All centre dashboard pages query with a `WHERE centre_id = ?` filter using the l
 
 ### Core Tasks (v1 — Done)
 - [x] Build AI parser server action (`app/src/lib/ai-parser.ts`) — Claude Haiku API, structured JSON output with per-field confidence
-- [x] Build clarification UI (`SlotClarificationTable.tsx`) — Colour-coded confidence, inline dropdowns/inputs, bulk defaults bar, exclude checkbox
+- [x] Build clarification UI (`SlotClarificationTable.tsx`) — Colour-coded confidence, inline dropdowns/inputs, capacity quick-pick (1/2/custom), `hideFee` prop, exclude checkbox
 - [x] Auto-create pipeline — Unknown subjects created with `is_custom: true`, unknown levels saved as `custom_level`
 - [x] Fallback — If Claude API call fails, fall back to rule-based parser with a warning message
 - [x] Multi-format support — CSV, XLSX (via SheetJS), screenshot/image (via Claude Vision), text paste
@@ -379,13 +379,30 @@ All centre dashboard pages query with a `WHERE centre_id = ?` filter using the l
 - [ ] `AddSlotSection.tsx` — Pass centreId + saveCorrectionsFn
 - [ ] `centre-dashboard/slots/page.tsx` — Pass centreId to AddSlotSection
 
+#### Web Search for Unknown Subjects (Done)
+- [x] `app/src/types/ai-parser.ts` — Added `SubjectWebSuggestion` type + optional `web_suggestion` field on `AIParsedSlot.subject`
+- [x] `app/src/lib/ai-parser.ts` — Added `verifyUnknownSubjects()`: after parse, identifies unknown subjects, makes ONE Claude Haiku call with `web_search_20260209` tool (`max_uses: 3`), returns match suggestions. Case-insensitive matching. Silent fallback on failure.
+- [x] `app/src/app/centre-dashboard/slots/actions.ts` — `attachWebSuggestions()` wired into `parseSchedule()` and `parseScheduleImage()`. Upgrades to `inferred` if match found, attaches `web_suggestion` for UI.
+- [x] `app/src/app/admin/centres/new/actions.ts` — Same `attachWebSuggestions()` wiring for admin onboarding
+- [x] Both `SlotClarificationTable.tsx` — `SubjectCell` shows subtle hint: `Matched: {name} — verified` or `Looks like a new subject`. Web context on hover tooltip. Pre-selects matched subject in dropdown.
+
+#### Enrichment Centre Support: Age Range + Custom Levels (Done)
+- [x] `app/src/app/centre-dashboard/slots/AddSlotSection.tsx` — Level mode tabs (School Level / Age Range / Custom) with progressive disclosure. Age Range: inline "Ages [min] to [max]". Custom: text input (e.g. "White Belt"). `handleSingleSubmit` passes correct values per mode.
+- [x] `app/src/lib/public-data.ts` — `SlotDetail.level` updated to `Level | null` to support slots without standard school levels
+- [x] `app/src/app/(public)/centres/[slug]/CentreSlots.tsx` — `getLevelDisplay()` helper for null-safe level display. Fixed `slot.level.label` crash. Level filter supports custom levels (keyed as `custom:value`).
+- [x] `app/src/app/(public)/book/[slotId]/page.tsx` — Fixed null `slot.level.label` crash in booking summary
+
 #### Verification
-- [ ] `cd app && npx tsc --noEmit` passes
+- [x] `cd app && npx tsc --noEmit` passes
+- [x] `cd app && npm run build` passes
 - [ ] Run both migrations against Supabase
 - [ ] Test: upload schedule with day names + weeks=2 → dates generated
 - [ ] Test: upload multi-sheet Excel → all sheets parsed
 - [ ] Test: make corrections → confirm → check `parse_corrections` has rows
 - [ ] Test: re-upload same format → AI uses learned corrections
+- [ ] Test: upload schedule with unknown subject → web search suggestion appears
+- [ ] Test: create slot with age range → verify display on public page
+- [ ] Test: create slot with custom level → verify display and filter
 
 ### Files
 | File | Purpose |
@@ -642,10 +659,11 @@ All emails include booking reference code (PSE-YYMMDD-XXXX), warm early-adopter 
 
 ### Checkpoint 8: Centre Onboarding — Trial Type + PayNow QR
 - [x] Migration — Added `trial_type` (free/paid, default free) and `paynow_qr_image_url` columns to centres table.
-- [x] Trial type radio on Add Centre form (Step 1) — Free (default) / Paid toggle.
-- [x] PayNow QR screenshot upload — Conditionally shown when "Paid" selected. Uploads to `centre-images` bucket under `paynow-qr/` path. Preview + remove.
-- [x] Server action updated — `createCentre()` accepts `trial_type` and `paynow_qr_image_url`.
+- [x] Trial type radio — **Moved from Step 0 to PricingPolicyStep (Step 4)**. Free (default) / Paid toggle at top of pricing step.
+- [x] PayNow QR screenshot upload — Conditionally shown when "Paid" selected. Uploads to `centre-images` bucket under `paynow-qr/` path. Preview + remove. Now in PricingPolicyStep.
+- [x] Server action updated — `savePricingAction()` handles `trial_type` and `paynow_qr_image_url` (removed from `createMinimalCentre()`).
 - [x] TypeScript type updated — `Centre` interface includes `trial_type` and `paynow_qr_image_url`.
+- [x] Simplified per-row trial types — removed `discounted` and `multi_lesson`, kept only `free` | `same_as_regular` with custom flat fee option.
 
 ### Checkpoint 9: Centre Onboarding Overhaul — Progressive Creation + Draft System
 
@@ -666,7 +684,7 @@ All emails include booking reference code (PSE-YYMMDD-XXXX), warm early-adopter 
 - [x] Public queries filtered — `getCentres()` and `getCentreBySlug()` exclude `is_draft=true` slots
 
 #### CP9-B: Progressive Admin Form
-- [x] New `createMinimalCentre(name, email, commissionRates, trialType, paynowQr)` server action — INSERTs centre (`is_active=false`) + centre_users (owner) + sends invite email → returns centreId
+- [x] New `createMinimalCentre(name, email, commissionRates)` server action — INSERTs centre (`is_active=false`) + centre_users (owner) + sends invite email → returns centreId (trial type + QR moved to Pricing step)
 - [x] New `updateCentreStep(centreId, stepData)` server action — UPDATEs centre with fields from steps 2-4
 - [x] New `addSlotsForCentre(centreId, slots[])` server action — INSERTs trial_slots + derives centre_subjects/levels
 - [x] Restructure `AddCentreForm.tsx` — Step 1 "Next" calls `createMinimalCentre()`, stores centreId. Steps 2-4 "Next" saves progressively. Step 5 "Finish" adds slots.
@@ -789,23 +807,23 @@ All emails include booking reference code (PSE-YYMMDD-XXXX), warm early-adopter 
 
 ## 8. Structured Pricing, Promotions & Policies
 
-**Problem**: Trial fees and regular fees vary by subject, level, and billing model. A centre might charge S$10 trial for P3 Math but S$20 for Sec 2 Science. Billing models range from per-lesson to monthly to termly to package-based. Centres also have complex policies written in wildly different formats. Currently trial_fee is set per slot during upload, but there's no structured pricing overview, no promotions system, and no standardised policies.
+**Problem**: Trial fees and regular fees vary by subject, level, and billing model. A centre might charge S$10 trial for P3 Math but S$20 for Sec 2 Science. Billing models range from per-lesson to monthly to termly to package-based. Centres also have complex policies written in wildly different formats. Trial fee is no longer set during schedule upload — it's handled in the Pricing & Policies step via `autoFillSlotTrialFees`.
 
 **Approach**: Admin types pricing/policy info as free text → AI standardises into structured data → admin reviews and edits. Store in dedicated `centre_pricing`, `centre_promotions`, and `centre_policies` tables. Show structured pricing and policies on the public centre profile.
 
 ### Flow
-1. Centre uploads schedule → AI parser extracts slots with subjects + levels
-2. Centre reviews/corrects parsed slots in clarification table
+1. Centre uploads schedule → AI parser extracts slots with subjects + levels (trial fee hidden from clarification table via `hideFee`)
+2. Centre reviews/corrects parsed slots in clarification table — capacity set via quick-pick (1/2 per class) or individually per slot
 3. **Pricing**: Admin pastes/types raw pricing text → AI standardises into structured pricing rows, extracts promotions and additional fees → admin reviews/edits in table form
 4. **Policies**: Admin pastes/types raw T&C text → AI categorises into standard policy categories with clean formatting → admin reviews/edits
-5. Trial fees auto-populate into the parsed slots
+5. Trial fees auto-filled into slots from pricing rows via `autoFillSlotTrialFees` (or zeroed if trial_type = 'free')
 6. Regular fees + billing display stored for public profile
 
 ### Schema (see migration: `supabase/migrations/20260307000001_centre_pricing_promotions_policies.sql`)
 ```sql
 -- centre_pricing: one row per subject+level+stream combo per centre
 -- Supports: per-lesson, monthly, termly, package, flat-rate billing
--- Fields: trial_type (free/discounted/same_as_regular/multi_lesson), trial_fee, trial_lessons,
+-- Fields: trial_type (free/same_as_regular), trial_fee, trial_lessons,
 --         regular_fee, lessons_per_period, billing_display (AI-generated), billing_raw (original text),
 --         lesson_duration_minutes, trial_same_as_regular, regular_schedule_note
 
@@ -825,8 +843,8 @@ All emails include booking reference code (PSE-YYMMDD-XXXX), warm early-adopter 
 
 ### Confirmed Decisions
 - Billing model: AI standardisation (no dropdown) — admin types freely → AI structures + generates uniform `billing_display` text → admin reviews/edits
-- Trial types: `free`, `discounted`, `same_as_regular`, `multi_lesson` — per subject+level
-- Multi-lesson trial: 1 booking covers N regular lessons (e.g. 4-lesson trial pack)
+- Trial types: `free`, `same_as_regular` — per subject+level (simplified; `discounted` and `multi_lesson` removed)
+- Trial type (free/paid) + PayNow QR moved from Step 0 to PricingPolicyStep (Step 4)
 - Additional fees: single free-text field on centre level (registration, deposit, materials, extras)
 - Policies: all stored in `centre_policies` table. AI categorises from raw text into standard categories + dynamic extras
 - Promotions: free text description + optional subject/level tags for filtering. Sibling discounts = promotions, sibling rules = policies
@@ -1103,13 +1121,26 @@ These are short, easy-to-answer questions designed to extract the good stuff:
 
 **Problem**: Currently adding slots is tedious — especially for recurring weekly classes. Centre has to upload/add all 4 weeks of dates individually. Should be able to define ONE week of classes and auto-generate for N weeks.
 
+**Status**: Done. AI parses 1 week → admin reviews in clarification table → WeekDuplicationStep duplicates for N weeks with PH flagging.
+
 #### Tasks
-- [ ] "Weekly template" mode in slot upload — centre enters classes for one week (Mon-Sat), specifying subject, level, time, fee, capacity per slot
-- [ ] "Generate for __ weeks" selector (default: 4 weeks) — creates copies of each slot for the next N weeks with correct dates
-- [ ] Preview generated slots before confirming — show all N×slots in the clarification table
-- [ ] Handle public holidays — flag slots that fall on SG public holidays (optional: auto-skip or warn)
-- [ ] This should work alongside the existing AI parser — if they upload a screenshot showing one week, AI parses it, then the x4 duplication happens on the parsed results
+- [x] "Weekly template" mode in slot upload — `SlotUploader` receives `hideWeeksInput` prop, forces `weeksAhead=1` to parse 1 week only
+- [x] "Generate for __ weeks" selector (default: 4 weeks) — `WeekDuplicationStep.tsx` groups classes by identity, generates N weekly dates
+- [x] Preview generated slots with per-date toggle — each date shown as a clickable chip, can exclude individual dates
+- [x] Public holiday flagging — SG 2026 dates from MOM gazette shown as amber "PH" badges (NOT auto-excluded, centres may operate on PH)
+- [x] Works alongside AI parser — paste/upload schedule → AI parses 1 week → clarification table → duplication step → final slots
+- [x] `AddCentreForm.tsx` — `schedulePhase` state machine: `upload` → `duplicate` → `ready`
+- [x] Trial fee removed from clarification table in admin onboarding — `hideFee` prop on `SlotUploader` + `SlotClarificationTable`. Fee set to 0, overwritten by Pricing step via `autoFillSlotTrialFees`
+- [x] Capacity quick-pick UX — when all slots missing `max_students`, shows pill buttons (1 per class / 2 per class / Custom) instead of plain input. "Or set individually per slot" toggle reveals Max column for per-row editing
 - [ ] Minor: fix the custom subject adding UX during clarification (currently requires re-selection)
+
+#### Files
+| File | Change |
+|------|--------|
+| `app/src/components/SlotUploader.tsx` | Added `hideWeeksInput` + `hideFee` props |
+| `app/src/components/SlotClarificationTable.tsx` | `hideFee` prop, capacity quick-pick buttons, `showMaxColumn` individual toggle |
+| `app/src/app/admin/centres/new/WeekDuplicationStep.tsx` | New — duplication UI with PH flags |
+| `app/src/app/admin/centres/new/AddCentreForm.tsx` | `schedulePhase` state machine, passes `hideWeeksInput` + `hideFee` |
 
 ---
 

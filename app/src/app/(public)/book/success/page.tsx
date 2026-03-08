@@ -1,11 +1,28 @@
 import Link from 'next/link'
 
+function formatDate(d: string) {
+  return new Date(d).toLocaleDateString('en-SG', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  })
+}
+
+function formatTime(t: string) {
+  const [h, m] = t.split(':')
+  const hour = parseInt(h)
+  const ampm = hour >= 12 ? 'pm' : 'am'
+  const display = hour > 12 ? hour - 12 : hour === 0 ? 12 : hour
+  return `${display}:${m}${ampm}`
+}
+
 export default async function BookingSuccessPage({
   searchParams,
 }: {
-  searchParams: Promise<{ ref?: string }>
+  searchParams: Promise<{ ref?: string; centre?: string; subject?: string; date?: string; time?: string }>
 }) {
-  const { ref } = await searchParams
+  const { ref, centre, subject, date, time } = await searchParams
 
   return (
     <div className="max-w-lg mx-auto px-6 py-16 text-center">
@@ -23,14 +40,45 @@ export default async function BookingSuccessPage({
         You&apos;ll receive a confirmation email shortly with all the details.
       </p>
 
-      {ref && (
-        <div className="bg-paper border border-linen rounded-2xl px-6 py-5 mb-8 inline-block">
-          <p className="text-xs font-display font-semibold text-sage uppercase tracking-widest mb-2">
-            Booking reference
-          </p>
-          <p className="font-display font-bold text-xl text-forest tracking-wide">{ref}</p>
-        </div>
-      )}
+      {/* Booking summary card */}
+      <div className="bg-paper border border-linen rounded-2xl px-6 py-5 mb-8 text-left">
+        {ref && (
+          <div className="text-center mb-4 pb-4 border-b border-linen">
+            <p className="text-xs font-display font-semibold text-sage uppercase tracking-widest mb-1">
+              Booking reference
+            </p>
+            <p className="font-display font-bold text-xl text-forest tracking-wide">{ref}</p>
+          </div>
+        )}
+        {(centre || subject || date) && (
+          <dl className="space-y-2">
+            {centre && (
+              <div className="flex justify-between text-sm">
+                <dt className="text-sage">Centre</dt>
+                <dd className="font-medium text-forest">{centre}</dd>
+              </div>
+            )}
+            {subject && (
+              <div className="flex justify-between text-sm">
+                <dt className="text-sage">Subject</dt>
+                <dd className="font-medium text-forest">{subject}</dd>
+              </div>
+            )}
+            {date && (
+              <div className="flex justify-between text-sm">
+                <dt className="text-sage">Date</dt>
+                <dd className="font-medium text-forest">{formatDate(date)}</dd>
+              </div>
+            )}
+            {time && (
+              <div className="flex justify-between text-sm">
+                <dt className="text-sage">Time</dt>
+                <dd className="font-medium text-forest">{formatTime(time)}</dd>
+              </div>
+            )}
+          </dl>
+        )}
+      </div>
 
       {/* What happens next */}
       <div className="bg-mint/50 border border-fern/10 rounded-2xl p-5 text-left mb-8">

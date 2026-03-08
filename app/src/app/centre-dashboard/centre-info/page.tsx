@@ -3,6 +3,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getCentrePricing } from '@/lib/public-data'
 import ProfileForm from './ProfileForm'
 import LocationForm from './LocationForm'
+import ContactLinksForm from './ContactLinksForm'
+import TeachersForm from './TeachersForm'
 import PoliciesForm from './PoliciesForm'
 import ImagesForm from './ImagesForm'
 import PricingSection from './PricingSection'
@@ -40,11 +42,12 @@ export default async function CentreInfoPage() {
     return <p className="text-gray-400">Centre not found.</p>
   }
 
-  const [pricingRows, { data: allSubjects }, { data: allLevels }, { data: structuredPolicies }] = await Promise.all([
+  const [pricingRows, { data: allSubjects }, { data: allLevels }, { data: structuredPolicies }, { data: teachersData }] = await Promise.all([
     getCentrePricing(centreId),
     supabase.from('subjects').select('id, name, sort_order').order('sort_order'),
     supabase.from('levels').select('id, label, level_group, sort_order').order('sort_order'),
     supabase.from('centre_policies').select('id, category, description, sort_order').eq('centre_id', centreId).order('sort_order'),
+    supabase.from('teachers').select('id, name, role, is_founder, qualifications, bio, years_experience, linkedin_url, students_taught, sort_order').eq('centre_id', centreId).order('sort_order'),
   ])
 
   const c = centre as any
@@ -115,6 +118,32 @@ export default async function CentreInfoPage() {
           parking_info: (eff('parking_info') as string) ?? '',
         }}
         isLive={isLive}
+      />
+
+      <ContactLinksForm
+        initial={{
+          website_url: (eff('website_url') as string) ?? '',
+          instagram_url: (eff('instagram_url') as string) ?? '',
+          tiktok_url: (eff('tiktok_url') as string) ?? '',
+          whatsapp_number: (eff('whatsapp_number') as string) ?? '',
+          phone_number: (eff('phone_number') as string) ?? '',
+          google_maps_url: (eff('google_maps_url') as string) ?? '',
+        }}
+        isLive={isLive}
+      />
+
+      <TeachersForm
+        initial={(teachersData ?? []).map((t: any) => ({
+          id: t.id,
+          name: t.name ?? '',
+          role: t.role ?? '',
+          is_founder: t.is_founder ?? false,
+          qualifications: t.qualifications ?? '',
+          bio: t.bio ?? '',
+          years_experience: t.years_experience ?? null,
+          linkedin_url: t.linkedin_url ?? '',
+          students_taught: t.students_taught ?? null,
+        }))}
       />
 
       <PoliciesForm structuredPolicies={structuredPolicies ?? []} />

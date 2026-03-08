@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useTransition, memo } from 'react'
-import { centreMarkAttended, centreMarkNoShow, centreMarkEnrolled } from './[id]/actions'
+import { centreMarkAttended, centreMarkNoShow, centreMarkEnrolled, centreMarkNotConverted } from './[id]/actions'
 import { BOOKING_STATUS_COLOR, BOOKING_STATUS_LABEL, type BookingStatus } from '@/types/database'
 
 export default memo(function InlineStatusActions({
@@ -59,13 +59,22 @@ export default memo(function InlineStatusActions({
       )}
 
       {canMarkEnrolled && (
-        <button
-          onClick={() => handleAction(() => centreMarkEnrolled(bookingId))}
-          disabled={isPending}
-          className="px-1.5 py-0.5 text-[11px] text-gray-500 hover:text-green-700 hover:underline transition-colors disabled:opacity-50"
-        >
-          {isPending ? '…' : '→ Enrolled'}
-        </button>
+        <>
+          <button
+            onClick={() => handleAction(() => centreMarkEnrolled(bookingId))}
+            disabled={isPending}
+            className="px-1.5 py-0.5 text-[11px] text-gray-500 hover:text-green-700 hover:underline transition-colors disabled:opacity-50"
+          >
+            {isPending ? '…' : '→ Enrolled'}
+          </button>
+          <button
+            onClick={() => handleAction(() => centreMarkNotConverted(bookingId))}
+            disabled={isPending}
+            className="px-1.5 py-0.5 text-[11px] text-gray-500 hover:text-gray-700 hover:underline transition-colors disabled:opacity-50"
+          >
+            {isPending ? '…' : '✗ Did Not Convert'}
+          </button>
+        </>
       )}
 
       {error && (

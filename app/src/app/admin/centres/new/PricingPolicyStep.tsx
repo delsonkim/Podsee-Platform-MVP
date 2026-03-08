@@ -10,6 +10,7 @@ import {
   updateCentreStep,
   loadPricingDataAction,
 } from './actions'
+import { uploadPaynowQr } from './image-actions'
 import type {
   StandardizedPricingRow,
   StandardizedPolicy,
@@ -70,6 +71,12 @@ export default function PricingPolicyStep({
   centreId?: string
   onComplete: () => void
 }) {
+  // ── Trial type state ────────────────────────────────────────
+  const [trialType, setTrialType] = useState<'free' | 'paid'>('free')
+  const [paynowQrImageUrl, setPaynowQrImageUrl] = useState<string | null>(null)
+  const [qrUploading, setQrUploading] = useState(false)
+  const qrInputRef = useRef<HTMLInputElement>(null)
+
   // ── Pricing state (manual) ──────────────────────────────────
   const [pricing, setPricing] = useState<StandardizedPricingRow[]>([])
   const [promotionsText, setPromotionsText] = useState('')
@@ -153,6 +160,9 @@ export default function PricingPolicyStep({
         setPolicyPhase('review')
       }
 
+      if (data.trialType) setTrialType(data.trialType)
+      if (data.paynowQrImageUrl) setPaynowQrImageUrl(data.paynowQrImageUrl)
+
       if (data.promotionsText) {
         setPromotionsText(data.promotionsText)
       }
@@ -181,6 +191,26 @@ export default function PricingPolicyStep({
     setNewSubject('')
     setNewLevel('')
     setShowAddRow(false)
+  }
+
+  async function handleQrSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setQrUploading(true)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const result = await uploadPaynowQr(fd)
+      if ('error' in result) {
+        setSaveError(result.error)
+      } else {
+        setPaynowQrImageUrl(result.url)
+      }
+    } catch {
+      setSaveError('QR upload failed. Please try again.')
+    } finally {
+      setQrUploading(false)
+    }
   }
 
   function applyBulkFill() {
@@ -306,18 +336,24 @@ export default function PricingPolicyStep({
       setSaveError('Centre must be created first (Step 1) before saving.')
       return
     }
+    if (trialType === 'paid' && !paynowQrImageUrl) {
+      setSaveError('Please upload a PayNow QR code for paid trials.')
+      return
+    }
     setSaveError(null)
 
     const cid = centreId
     startSaveTransition(async () => {
       // Save pricing if any rows have fees
       const pricingWithFees = pricing.filter((r) => r.regular_fee > 0)
-      if (pricingWithFees.length > 0 || promotionsText.trim() || additionalFees) {
+      if (pricingWithFees.length > 0 || promotionsText.trim() || additionalFees || trialType) {
         const pricingResult = await savePricingAction(cid, {
           pricing: pricingWithFees,
           promotionsText: promotionsText.trim() || null,
           additionalFees,
           billingRaw: null,
+          trialType,
+          paynowQrImageUrl,
         })
         if ('error' in pricingResult) {
           setSaveError(pricingResult.error)
@@ -370,7 +406,7 @@ export default function PricingPolicyStep({
 
   const hasFilledPricing = pricing.some((r) => r.regular_fee > 0)
   const hasPolicies = policies.length > 0
-  const hasAnything = hasFilledPricing || hasPolicies
+  const hasAnything = hasFilledPricing || hasPolicies || trialType === 'paid'
 
   return (
     <div className="space-y-8">
@@ -379,6 +415,89 @@ export default function PricingPolicyStep({
         <p className="text-sm text-gray-500 mt-1">
           Fill in pricing manually below. For policies, paste text or upload files and AI will extract them.
         </p>
+      </div>
+
+      {/* ═══════════════════════════════════════════════════════════ */}
+      {/* SECTION 0: TRIAL TYPE + PAYNOW QR                         */}
+      {/* ═══════════════════════════════════════════════════════════ */}
+      <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+        <h3 className="text-sm font-semibold text-gray-700 mb-3">Trial Type</h3>
+        <div className="flex gap-4">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="radio"
+              name="trial_type"
+              value="free"
+              checked={trialType === 'free'}
+              onChange={() => setTrialType('free')}
+              className="accent-gray-900"
+            />
+            <span className="text-sm text-gray-700 font-medium">Free trial</span>
+            <span className="text-xs text-gray-400">— all trial fees will be $0</span>
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="radio"
+              name="trial_type"
+              value="paid"
+              checked={trialType === 'paid'}
+              onChange={() => setTrialType('paid')}
+              className="accent-gray-900"
+            />
+            <span className="text-sm text-gray-700 font-medium">Paid trial</span>
+            <span className="text-xs text-gray-400">— set trial fees per subject/level</span>
+          </label>
+        </div>
+
+        {/* PayNow QR upload — paid trials only */}
+        {trialType === 'paid' && (
+          <div className="mt-4 pt-4 border-t border-gray-200">
+            <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">
+              PayNow QR Code <span className="text-red-400">*</span>
+            </label>
+            <p className="text-xs text-gray-400 mb-3">
+              Parents will scan this to pay the trial fee before booking.
+            </p>
+            {!paynowQrImageUrl ? (
+              <div>
+                <button
+                  type="button"
+                  onClick={() => qrInputRef.current?.click()}
+                  disabled={qrUploading}
+                  className="border-2 border-dashed border-gray-300 rounded-lg px-6 py-4 text-sm text-gray-500 hover:text-gray-700 hover:border-gray-400 transition-colors disabled:opacity-50"
+                >
+                  {qrUploading ? 'Uploading…' : 'Click to upload PayNow QR image'}
+                </button>
+                <input
+                  ref={qrInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleQrSelect}
+                  className="hidden"
+                />
+              </div>
+            ) : (
+              <div className="flex items-start gap-3">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={paynowQrImageUrl}
+                  alt="PayNow QR"
+                  className="w-28 h-28 object-contain rounded-lg border border-gray-200"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPaynowQrImageUrl(null)
+                    if (qrInputRef.current) qrInputRef.current.value = ''
+                  }}
+                  className="text-xs text-red-500 hover:text-red-700"
+                >
+                  Remove
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ═══════════════════════════════════════════════════════════ */}
@@ -461,32 +580,35 @@ export default function PricingPolicyStep({
                   type="text"
                   value={bulkBilling}
                   onChange={(e) => setBulkBilling(e.target.value)}
-                  placeholder="$280/month (4 lessons)"
+                  placeholder="$280/month, $500/10 lessons"
                   className="w-48 border border-gray-300 rounded px-2 py-1.5 text-xs"
                 />
               </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-0.5">Trial</label>
-                <select
-                  value={bulkTrialType}
-                  onChange={(e) => setBulkTrialType(e.target.value)}
-                  className="border border-gray-300 rounded px-2 py-1.5 text-xs"
-                >
-                  <option value="free">Free</option>
-                  <option value="discounted">Discounted</option>
-                  <option value="same_as_regular">Same as regular</option>
-                </select>
-              </div>
-              {bulkTrialType === 'discounted' && (
-                <div>
-                  <label className="block text-xs text-gray-500 mb-0.5">Trial Fee</label>
-                  <input
-                    type="number"
-                    value={bulkTrialFee}
-                    onChange={(e) => setBulkTrialFee(e.target.value)}
-                    className="w-20 border border-gray-300 rounded px-2 py-1.5 text-xs"
-                  />
-                </div>
+              {trialType === 'paid' && (
+                <>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-0.5">Trial</label>
+                    <select
+                      value={bulkTrialType}
+                      onChange={(e) => setBulkTrialType(e.target.value)}
+                      className="border border-gray-300 rounded px-2 py-1.5 text-xs"
+                    >
+                      <option value="same_as_regular">Same as regular</option>
+                      <option value="free">Custom fee</option>
+                    </select>
+                  </div>
+                  {bulkTrialType === 'free' && (
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-0.5">Trial Fee ($)</label>
+                      <input
+                        type="number"
+                        value={bulkTrialFee}
+                        onChange={(e) => setBulkTrialFee(e.target.value)}
+                        className="w-20 border border-gray-300 rounded px-2 py-1.5 text-xs"
+                      />
+                    </div>
+                  )}
+                </>
               )}
               <button
                 type="button"
@@ -553,10 +675,11 @@ export default function PricingPolicyStep({
                   <tr>
                     <th className="text-left px-3 py-2.5 font-medium text-gray-700">Subject</th>
                     <th className="text-left px-3 py-2.5 font-medium text-gray-700">Level</th>
-                    <th className="text-left px-3 py-2.5 font-medium text-gray-700 w-24">Fee ($)</th>
-                    <th className="text-left px-3 py-2.5 font-medium text-gray-700 w-20">Lessons</th>
-                    <th className="text-left px-3 py-2.5 font-medium text-gray-700">Billing Display</th>
-                    <th className="text-left px-3 py-2.5 font-medium text-gray-700 w-28">Trial</th>
+                    <th className="text-left px-3 py-2.5 font-medium text-gray-700 w-24">Price ($)</th>
+                    <th className="text-left px-3 py-2.5 font-medium text-gray-700">Billing</th>
+                    {trialType === 'paid' && (
+                      <th className="text-left px-3 py-2.5 font-medium text-gray-700 w-44">Trial Fee</th>
+                    )}
                     <th className="text-right px-3 py-2.5 font-medium text-gray-700 w-16"></th>
                   </tr>
                 </thead>
@@ -565,10 +688,10 @@ export default function PricingPolicyStep({
                     <tr key={i} className="hover:bg-gray-50/50">
                       {editingPricingRow === i ? (
                         <>
-                          <td className="px-3 py-2" colSpan={6}>
+                          <td className="px-3 py-2" colSpan={5}>
                             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                               <div>
-                                <label className="block text-xs text-gray-500 mb-0.5">Regular Fee ($)</label>
+                                <label className="block text-xs text-gray-500 mb-0.5">Price ($)</label>
                                 <input
                                   type="number"
                                   value={row.regular_fee || ''}
@@ -585,40 +708,31 @@ export default function PricingPolicyStep({
                                   className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
                                 />
                               </div>
-                              <div>
-                                <label className="block text-xs text-gray-500 mb-0.5">Trial Type</label>
-                                <select
-                                  value={row.trial_type}
-                                  onChange={(e) => updatePricingRow(i, 'trial_type', e.target.value)}
-                                  className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
-                                >
-                                  <option value="free">Free</option>
-                                  <option value="discounted">Discounted</option>
-                                  <option value="same_as_regular">Same as regular</option>
-                                  <option value="multi_lesson">Multi-lesson pack</option>
-                                </select>
-                              </div>
-                              {(row.trial_type === 'discounted' || row.trial_type === 'multi_lesson') && (
-                                <div>
-                                  <label className="block text-xs text-gray-500 mb-0.5">Trial Fee ($)</label>
-                                  <input
-                                    type="number"
-                                    value={row.trial_fee}
-                                    onChange={(e) => updatePricingRow(i, 'trial_fee', parseFloat(e.target.value) || 0)}
-                                    className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
-                                  />
-                                </div>
-                              )}
-                              {row.trial_type === 'multi_lesson' && (
-                                <div>
-                                  <label className="block text-xs text-gray-500 mb-0.5">Trial Lessons</label>
-                                  <input
-                                    type="number"
-                                    value={row.trial_lessons}
-                                    onChange={(e) => updatePricingRow(i, 'trial_lessons', parseInt(e.target.value) || 1)}
-                                    className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
-                                  />
-                                </div>
+                              {trialType === 'paid' && (
+                                <>
+                                  <div>
+                                    <label className="block text-xs text-gray-500 mb-0.5">Trial Type</label>
+                                    <select
+                                      value={row.trial_type}
+                                      onChange={(e) => updatePricingRow(i, 'trial_type', e.target.value)}
+                                      className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
+                                    >
+                                      <option value="same_as_regular">Same as regular</option>
+                                      <option value="free">Custom fee</option>
+                                    </select>
+                                  </div>
+                                  {row.trial_type === 'free' && (
+                                    <div>
+                                      <label className="block text-xs text-gray-500 mb-0.5">Trial Fee ($)</label>
+                                      <input
+                                        type="number"
+                                        value={row.trial_fee}
+                                        onChange={(e) => updatePricingRow(i, 'trial_fee', parseFloat(e.target.value) || 0)}
+                                        className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
+                                      />
+                                    </div>
+                                  )}
+                                </>
                               )}
                               <div>
                                 <label className="block text-xs text-gray-500 mb-0.5">Duration (min)</label>
@@ -635,7 +749,7 @@ export default function PricingPolicyStep({
                                   type="text"
                                   value={row.billing_display}
                                   onChange={(e) => updatePricingRow(i, 'billing_display', e.target.value)}
-                                  placeholder="e.g. $280/month (4 x 2hr lessons)"
+                                  placeholder="e.g. $280/month, $500/10 lessons, $1200/term"
                                   className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
                                 />
                               </div>
@@ -666,33 +780,36 @@ export default function PricingPolicyStep({
                           </td>
                           <td className="px-3 py-2.5">
                             <input
-                              type="number"
-                              value={row.lessons_per_period ?? ''}
-                              onChange={(e) => updatePricingRow(i, 'lessons_per_period', e.target.value ? parseInt(e.target.value) : null)}
-                              placeholder="4"
-                              className="w-full border border-gray-200 rounded px-2 py-1 text-sm"
-                            />
-                          </td>
-                          <td className="px-3 py-2.5">
-                            <input
                               type="text"
                               value={row.billing_display}
                               onChange={(e) => updatePricingRow(i, 'billing_display', e.target.value)}
-                              placeholder="$280/month"
+                              placeholder="e.g. $280/month, $500/10 lessons, $1200/term"
                               className="w-full border border-gray-200 rounded px-2 py-1 text-sm"
                             />
                           </td>
-                          <td className="px-3 py-2.5">
-                            <select
-                              value={row.trial_type}
-                              onChange={(e) => updatePricingRow(i, 'trial_type', e.target.value)}
-                              className="w-full border border-gray-200 rounded px-1 py-1 text-xs"
-                            >
-                              <option value="free">Free</option>
-                              <option value="discounted">Discounted</option>
-                              <option value="same_as_regular">Regular rate</option>
-                            </select>
-                          </td>
+                          {trialType === 'paid' && (
+                            <td className="px-3 py-2.5">
+                              <div className="flex items-center gap-1.5">
+                                <select
+                                  value={row.trial_type}
+                                  onChange={(e) => updatePricingRow(i, 'trial_type', e.target.value)}
+                                  className="border border-gray-200 rounded px-1 py-1 text-xs shrink-0"
+                                >
+                                  <option value="same_as_regular">= Fee</option>
+                                  <option value="free">Custom</option>
+                                </select>
+                                {row.trial_type === 'free' && (
+                                  <input
+                                    type="number"
+                                    value={row.trial_fee || ''}
+                                    onChange={(e) => updatePricingRow(i, 'trial_fee', parseFloat(e.target.value) || 0)}
+                                    placeholder="$"
+                                    className="w-16 border border-gray-200 rounded px-2 py-1 text-sm"
+                                  />
+                                )}
+                              </div>
+                            </td>
+                          )}
                           <td className="px-3 py-2.5 text-right">
                             <div className="flex items-center justify-end gap-1">
                               <button

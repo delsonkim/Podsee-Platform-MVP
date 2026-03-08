@@ -49,6 +49,8 @@ interface Props {
   parseScheduleImageFn: (base64Data: string, mediaType: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp', weeksAhead?: number) => Promise<AIParseResult>
   createCustomSubjectFn: (name: string) => Promise<{ id: string; name: string } | { error: string }>
   saveCorrectionsFn?: (corrections: CorrectionInput[]) => Promise<void>
+  hideWeeksInput?: boolean
+  hideFee?: boolean
 }
 
 // ── Fallback rule-based parser (kept for when AI is unavailable) ──
@@ -216,10 +218,10 @@ function fileToBase64(file: File): Promise<string> {
 
 type Phase = 'input' | 'parsing' | 'review'
 
-export default function SlotUploader({ subjects, levels, centreId, onSlotsReady, parseScheduleFn, parseScheduleImageFn, createCustomSubjectFn, saveCorrectionsFn }: Props) {
+export default function SlotUploader({ subjects, levels, centreId, onSlotsReady, parseScheduleFn, parseScheduleImageFn, createCustomSubjectFn, saveCorrectionsFn, hideWeeksInput, hideFee }: Props) {
   const [tab, setTab] = useState<'upload' | 'paste'>('paste')
   const [pasteText, setPasteText] = useState('')
-  const [weeksAhead, setWeeksAhead] = useState(4)
+  const [weeksAhead, setWeeksAhead] = useState(hideWeeksInput ? 1 : 4)
   const [phase, setPhase] = useState<Phase>('input')
   const [aiResult, setAiResult] = useState<AIParseResult | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -352,19 +354,21 @@ export default function SlotUploader({ subjects, levels, centreId, onSlotsReady,
           </div>
 
           {/* Weeks ahead input */}
-          <div className="flex items-center gap-3 bg-gray-50 rounded-lg px-3 py-2">
-            <label className="text-xs text-gray-600 whitespace-nowrap">Generate slots for</label>
-            <input
-              type="number"
-              min={1}
-              max={12}
-              value={weeksAhead}
-              onChange={(e) => setWeeksAhead(Math.max(1, parseInt(e.target.value) || 1))}
-              className="w-14 border border-gray-300 rounded px-2 py-1 text-xs text-center focus:outline-none focus:ring-1 focus:ring-gray-900/20 focus:border-gray-400"
-            />
-            <span className="text-xs text-gray-600">weeks</span>
-            <span className="text-[10px] text-gray-400 ml-auto">Only applies when schedule has day names instead of dates</span>
-          </div>
+          {!hideWeeksInput && (
+            <div className="flex items-center gap-3 bg-gray-50 rounded-lg px-3 py-2">
+              <label className="text-xs text-gray-600 whitespace-nowrap">Generate slots for</label>
+              <input
+                type="number"
+                min={1}
+                max={12}
+                value={weeksAhead}
+                onChange={(e) => setWeeksAhead(Math.max(1, parseInt(e.target.value) || 1))}
+                className="w-14 border border-gray-300 rounded px-2 py-1 text-xs text-center focus:outline-none focus:ring-1 focus:ring-gray-900/20 focus:border-gray-400"
+              />
+              <span className="text-xs text-gray-600">weeks</span>
+              <span className="text-[10px] text-gray-400 ml-auto">Only applies when schedule has day names instead of dates</span>
+            </div>
+          )}
 
           <button
             type="button"
@@ -461,6 +465,7 @@ export default function SlotUploader({ subjects, levels, centreId, onSlotsReady,
           onRestart={restart}
           createCustomSubjectFn={createCustomSubjectFn}
           saveCorrectionsFn={saveCorrectionsFn}
+          hideFee={hideFee}
         />
       )}
     </div>

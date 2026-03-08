@@ -52,6 +52,11 @@ export default async function BookingPage({
   if (!user) redirect(`/centres`)
   if (!slot) notFound()
 
+  // Guard: slot must have a valid subject, not be draft, not be in the past, and centre must be active
+  if (!slot.subject || slot.is_draft || !slot.centre?.is_active || slot.centre?.is_paused) notFound()
+  const today = new Date().toISOString().slice(0, 10)
+  if (slot.date < today) notFound()
+
   const pricing = await getSlotPricing(slot.centre.id, slot.subject.id, slot.level?.id ?? null)
 
   const userProfile = {
@@ -97,7 +102,7 @@ export default async function BookingPage({
                 {[
                   { label: 'Centre', value: slot.centre.name },
                   { label: 'Subject', value: slot.subject.name },
-                  { label: 'Level', value: slot.level.label, stream: slot.stream },
+                  { label: 'Level', value: slot.level?.label ?? (slot.age_min != null ? `Ages ${slot.age_min}${slot.age_max != null ? `–${slot.age_max}` : '+'}` : slot.custom_level ?? 'All levels'), stream: slot.stream },
                   { label: 'Date', value: formatDate(slot.date) },
                   { label: 'Time', value: `${formatTime(slot.start_time)} – ${formatTime(slot.end_time)}` },
                 ].map(({ label, value, stream }) => {

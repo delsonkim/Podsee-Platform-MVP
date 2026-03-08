@@ -190,3 +190,21 @@ export async function centreMarkEnrolled(bookingId: string) {
   revalidatePath('/admin/bookings')
   revalidatePath('/admin')
 }
+
+export async function centreMarkNotConverted(bookingId: string) {
+  const { supabase, booking } = await verifyBookingOwnership(bookingId)
+
+  if (booking.status !== 'completed') {
+    throw new Error('Only completed bookings can be marked as not converted')
+  }
+
+  // Record on trial_outcomes — booking stays as 'completed'
+  await supabase.from('trial_outcomes').update({
+    centre_reported_status: 'not_enrolled',
+    centre_reported_at: new Date().toISOString(),
+  }).eq('booking_id', bookingId)
+
+  revalidatePath(`/centre-dashboard/bookings/${bookingId}`)
+  revalidatePath('/centre-dashboard/bookings')
+  revalidatePath('/centre-dashboard')
+}

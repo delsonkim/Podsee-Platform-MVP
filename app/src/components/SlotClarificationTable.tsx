@@ -25,6 +25,7 @@ interface Props {
   onRestart: () => void
   createCustomSubjectFn: (name: string) => Promise<{ id: string; name: string } | { error: string }>
   saveCorrectionsFn?: (corrections: CorrectionInput[]) => Promise<void>
+  hideFee?: boolean
 }
 
 interface SlotOverrides {
@@ -72,15 +73,18 @@ function fieldNeedsInput(confidence: Confidence, _value: unknown, overrideValue:
   return overrideValue === null || overrideValue === '' || overrideValue === undefined
 }
 
-export default function SlotClarificationTable({ result, subjects, levels, centreId, onConfirm, onRestart, createCustomSubjectFn, saveCorrectionsFn }: Props) {
+export default function SlotClarificationTable({ result, subjects, levels, centreId, onConfirm, onRestart, createCustomSubjectFn, saveCorrectionsFn, hideFee }: Props) {
   const [overrides, setOverrides] = useState<SlotOverrides[]>(() => result.slots.map(initOverrides))
   const [bulkFee, setBulkFee] = useState<string>('')
   const [bulkMax, setBulkMax] = useState<string>('')
+  const [customMax, setCustomMax] = useState<string>('')
+  const [showMaxColumn, setShowMaxColumn] = useState(false)
   const [showSkipped, setShowSkipped] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   const allFeesMissing = result.slots.length > 0 && result.slots.every((s) => s.trial_fee.confidence === 'needs_review')
   const allMaxMissing = result.slots.length > 0 && result.slots.every((s) => s.max_students.confidence === 'needs_review')
+  const showFee = !hideFee
 
   const updateSlot = useCallback((index: number, patch: Partial<SlotOverrides>) => {
     setOverrides((prev) => prev.map((o, i) => (i === index ? { ...o, ...patch } : o)))
@@ -95,10 +99,15 @@ export default function SlotClarificationTable({ result, subjects, levels, centr
     if (fieldNeedsInput(slot.date.confidence, slot.date.value, overrides[i].date)) issues++
     if (fieldNeedsInput(slot.start_time.confidence, slot.start_time.value, overrides[i].start_time)) issues++
     if (fieldNeedsInput(slot.end_time.confidence, slot.end_time.value, overrides[i].end_time)) issues++
-    if (!allFeesMissing || !bulkFee.trim()) {
-      if (fieldNeedsInput(slot.trial_fee.confidence, slot.trial_fee.value, overrides[i].trial_fee)) issues++
+    if (showFee) {
+      if (!allFeesMissing || !bulkFee.trim()) {
+        if (fieldNeedsInput(slot.trial_fee.confidence, slot.trial_fee.value, overrides[i].trial_fee)) issues++
+      }
     }
-    if (!allMaxMissing || !bulkMax.trim()) {
+    if (showMaxColumn) {
+      // Individual mode: each slot must have max_students set
+      if (fieldNeedsInput(slot.max_students.confidence, slot.max_students.value, overrides[i].max_students)) issues++
+    } else if (!allMaxMissing || !bulkMax.trim()) {
       if (fieldNeedsInput(slot.max_students.confidence, slot.max_students.value, overrides[i].max_students)) issues++
     }
     return count + issues
@@ -136,7 +145,7 @@ export default function SlotClarificationTable({ result, subjects, levels, centr
           subjectName = o.new_subject_name.trim()
         }
 
-        let fee = o.trial_fee
+        let fee = hideFee ? 0 : o.trial_fee
         if (fee === null && allFeesMissing && bulkFee.trim()) fee = parseFloat(bulkFee)
         let max = o.max_students
         if (max === null && allMaxMissing && bulkMax.trim()) max = parseInt(bulkMax)
@@ -253,24 +262,72 @@ export default function SlotClarificationTable({ result, subjects, levels, centr
         </span>
       </div>
 
-      {(allFeesMissing || allMaxMissing) && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-3">
-          <p className="text-sm font-medium text-blue-900">Set defaults for all slots at once</p>
-          <p className="text-xs text-blue-700">No pricing was found in the schedule. Enter your trial fee below and it will apply to every slot.</p>
-          <div className="flex flex-wrap gap-4">
-            {allFeesMissing && (
-              <div>
-                <label className="block text-xs font-medium text-blue-700 mb-1">Trial fee (S$)</label>
-                <input type="number" min={0} step="0.01" value={bulkFee} onChange={(e) => setBulkFee(e.target.value)} placeholder="e.g. 25" className="w-32 border border-blue-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400" />
-              </div>
-            )}
-            {allMaxMissing && (
-              <div>
-                <label className="block text-xs font-medium text-blue-700 mb-1">Max students per class</label>
-                <input type="number" min={1} value={bulkMax} onChange={(e) => setBulkMax(e.target.value)} placeholder="e.g. 4" className="w-32 border border-blue-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400" />
-              </div>
-            )}
+      {/* Bulk fee input — only when fee column visible and all fees missing */}
+      {showFee && allFeesMissing && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-2">
+          <p className="text-sm font-medium text-blue-900">Set trial fee for all slots</p>
+          <p className="text-xs text-blue-700">No pricing was found in the schedule.</p>
+          <div>
+            <label className="block text-xs font-medium text-blue-700 mb-1">Trial fee (S$)</label>
+            <input type="number" min={0} step="0.01" value={bulkFee} onChange={(e) => setBulkFee(e.target.value)} placeholder="e.g. 25" className="w-32 border border-blue-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400" />
           </div>
+        </div>
+      )}
+
+      {/* Capacity quick-pick — when all max_students missing and not in individual mode */}
+      {allMaxMissing && !showMaxColumn && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-3">
+          <p className="text-sm font-medium text-blue-900">Trial spots per class</p>
+          <p className="text-xs text-blue-700">How many trial students can join each class?</p>
+          <div className="flex items-center gap-2">
+            {['1', '2'].map((n) => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => { setBulkMax(n); setCustomMax('') }}
+                className={`px-4 py-1.5 text-sm font-medium rounded-full border transition-colors ${
+                  bulkMax === n
+                    ? 'bg-gray-900 text-white border-gray-900'
+                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                }`}
+              >
+                {n} per class
+              </button>
+            ))}
+            <div className="flex items-center gap-1.5">
+              <input
+                type="number"
+                min={1}
+                max={20}
+                value={customMax}
+                onChange={(e) => {
+                  const val = e.target.value
+                  setCustomMax(val)
+                  if (val && parseInt(val) > 0) setBulkMax(val)
+                }}
+                placeholder="Custom"
+                className="w-20 border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
+              />
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              // Pre-fill each slot's override with the current bulk value before switching to individual mode
+              if (bulkMax.trim()) {
+                const val = parseInt(bulkMax)
+                if (val > 0) {
+                  setOverrides((prev) => prev.map((o) => o.max_students === null ? { ...o, max_students: val } : o))
+                }
+              }
+              setShowMaxColumn(true)
+              setBulkMax('')
+              setCustomMax('')
+            }}
+            className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+          >
+            or set individually per slot &rarr;
+          </button>
         </div>
       )}
 
@@ -284,8 +341,8 @@ export default function SlotClarificationTable({ result, subjects, levels, centr
               <th className="px-3 py-2 text-left font-medium text-gray-500">Stream</th>
               <th className="px-3 py-2 text-left font-medium text-gray-500">Date</th>
               <th className="px-3 py-2 text-left font-medium text-gray-500">Time</th>
-              {!allFeesMissing && <th className="px-3 py-2 text-left font-medium text-gray-500">Fee</th>}
-              {!allMaxMissing && <th className="px-3 py-2 text-left font-medium text-gray-500">Max</th>}
+              {showFee && !allFeesMissing && <th className="px-3 py-2 text-left font-medium text-gray-500">Fee</th>}
+              {(!allMaxMissing || showMaxColumn) && <th className="px-3 py-2 text-left font-medium text-gray-500">Max</th>}
               <th className="px-3 py-2 text-left font-medium text-gray-500">Notes</th>
             </tr>
           </thead>
@@ -306,8 +363,8 @@ export default function SlotClarificationTable({ result, subjects, levels, centr
                     <TextCell confidence={slot.end_time.confidence} value={overrides[i].end_time} rawText={slot.end_time.raw_text} placeholder="HH:mm" onChange={(v) => updateSlot(i, { end_time: v })} className="w-16" />
                   </div>
                 </td>
-                {!allFeesMissing && <td className="px-3 py-2"><NumberCell confidence={slot.trial_fee.confidence} value={overrides[i].trial_fee} rawText={slot.trial_fee.raw_text} placeholder="$" onChange={(v) => updateSlot(i, { trial_fee: v })} /></td>}
-                {!allMaxMissing && <td className="px-3 py-2"><NumberCell confidence={slot.max_students.confidence} value={overrides[i].max_students} rawText={slot.max_students.raw_text} placeholder="#" onChange={(v) => updateSlot(i, { max_students: v })} /></td>}
+                {showFee && !allFeesMissing && <td className="px-3 py-2"><NumberCell confidence={slot.trial_fee.confidence} value={overrides[i].trial_fee} rawText={slot.trial_fee.raw_text} placeholder="$" onChange={(v) => updateSlot(i, { trial_fee: v })} /></td>}
+                {(!allMaxMissing || showMaxColumn) && <td className="px-3 py-2"><NumberCell confidence={slot.max_students.confidence} value={overrides[i].max_students} rawText={slot.max_students.raw_text} placeholder="#" onChange={(v) => updateSlot(i, { max_students: v })} /></td>}
                 <td className="px-3 py-2 text-gray-400 truncate max-w-[120px]">{overrides[i].notes}</td>
               </tr>
             ))}
@@ -364,6 +421,7 @@ function ConfidenceDot({ confidence }: { confidence: Confidence }) {
 function SubjectCell({ field, override, subjects, onChange }: { field: AIParsedSlot['subject']; override: SlotOverrides; subjects: Subject[]; onChange: (patch: Partial<SlotOverrides>) => void }) {
   if (field.confidence === 'confirmed' && override.subject_id) return <span className="text-gray-900">{override.subject_name}</span>
   const showNewInput = override.subject_id === '__new__'
+  const ws = field.web_suggestion
   return (
     <div className="space-y-1">
       <div className="flex items-center">
@@ -385,7 +443,12 @@ function SubjectCell({ field, override, subjects, onChange }: { field: AIParsedS
         </select>
       </div>
       {showNewInput && <input type="text" value={override.new_subject_name} onChange={(e) => onChange({ new_subject_name: e.target.value })} placeholder="New subject name" className="w-full text-xs border border-gray-200 rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-gray-900/20 focus:border-gray-400" />}
-      {field.raw_text && field.confidence === 'inferred' && <span className="text-[10px] text-gray-400">from &ldquo;{field.raw_text}&rdquo;</span>}
+      {field.raw_text && field.confidence === 'inferred' && !ws && <span className="text-[10px] text-gray-400">from &ldquo;{field.raw_text}&rdquo;</span>}
+      {ws && (
+        <span className="text-[10px] text-blue-500" title={ws.web_context}>
+          {ws.is_new_subject ? 'Looks like a new subject' : `Matched: ${ws.suggested_name}`} — verified
+        </span>
+      )}
     </div>
   )
 }

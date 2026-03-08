@@ -159,5 +159,13 @@ export async function submitBooking(formData: FormData) {
     }
   }
 
-  redirect(`/book/success?ref=${bookingRef}`)
+  const successParams = new URLSearchParams({ ref: bookingRef })
+  if (fullSlot) {
+    const s = fullSlot as any
+    if (s.centres?.name) successParams.set('centre', s.centres.name)
+    if (s.subjects?.name) successParams.set('subject', s.subjects.name)
+    if (s.date) successParams.set('date', s.date)
+    if (s.start_time) successParams.set('time', s.start_time)
+  }
+  redirect(`/book/success?${successParams.toString()}`)
 }
