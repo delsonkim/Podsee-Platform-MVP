@@ -10,6 +10,7 @@ import {
   PoliciesEditForm,
   ContactLinksEditForm,
   TeachersEditForm,
+  ImagesEditForm,
 } from './AdminEditForms'
 
 const FIELD_LABELS: Record<string, string> = {
@@ -83,6 +84,12 @@ export default async function AdminCentreEditPage({ params }: { params: Promise<
           is_paused: centre.is_paused,
           is_trusted: c.is_trusted ?? false,
         }}
+      />
+
+      {/* Section: Centre Photos */}
+      <ImagesEditForm
+        centreId={centre.id}
+        initial={{ image_urls: (c.image_urls as string[]) ?? [] }}
       />
 
       {/* Section B: Pending Draft Changes */}

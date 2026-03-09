@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import {
   updateAdminFields,
   updateCentreFieldsAsAdmin,
@@ -8,6 +8,7 @@ import {
   approveDraftData,
   rejectDraftData,
 } from './actions'
+import { uploadCentreImage } from '@/lib/image-actions'
 
 // ── Shared helpers ──────────────────────────────────────────
 
@@ -541,6 +542,109 @@ export function TeachersEditForm({ centreId, initial }: { centreId: string; init
             ))}
             <button type="button" onClick={() => setTeachers(prev => [...prev, { ...emptyTeacher }])} className="w-full border-2 border-dashed border-gray-200 rounded-lg py-3 text-sm text-gray-500 hover:text-gray-700 hover:border-gray-300 transition-colors">+ Add another teacher</button>
           </div>
+          <SaveCancelRow saving={saving} onSave={handleSave} onCancel={handleCancel} message={null} />
+        </>
+      )}
+    </div>
+  )
+}
+
+// ── Images Edit Section ─────────────────────────────────────
+
+export function ImagesEditForm({ centreId, initial }: {
+  centreId: string
+  initial: { image_urls: string[] }
+}) {
+  const [editing, setEditing] = useState(false)
+  const [imageUrls, setImageUrls] = useState<string[]>(initial.image_urls)
+  const [uploading, setUploading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  function handleCancel() {
+    setImageUrls(initial.image_urls)
+    setEditing(false)
+    setMessage(null)
+  }
+
+  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true)
+    setMessage(null)
+    const fd = new FormData()
+    fd.append('file', file)
+    const result = await uploadCentreImage(fd)
+    setUploading(false)
+    if ('url' in result) setImageUrls((prev) => [...prev, result.url])
+    else setMessage({ type: 'error', text: result.error })
+    if (fileRef.current) fileRef.current.value = ''
+  }
+
+  async function handleSave() {
+    setSaving(true)
+    setMessage(null)
+    try {
+      await updateCentreFieldsAsAdmin(centreId, { image_urls: imageUrls })
+      setMessage({ type: 'success', text: 'Saved' })
+      setEditing(false)
+    } catch (e: any) {
+      setMessage({ type: 'error', text: e.message ?? 'Failed' })
+    }
+    setSaving(false)
+  }
+
+  return (
+    <div className="bg-white rounded-lg border border-gray-200 p-5">
+      <SectionHeader title="Centre Photos" editing={editing} onEdit={() => { setEditing(true); setMessage(null) }} />
+      {message && <div className={`mb-3 text-sm ${message.type === 'error' ? 'text-red-600' : 'text-green-600'}`}>{message.text}</div>}
+
+      {!editing ? (
+        imageUrls.length > 0 ? (
+          <div className="grid grid-cols-3 gap-3">
+            {imageUrls.map((url, i) => (
+              <div key={url} className="relative rounded-lg overflow-hidden border border-gray-200">
+                <img src={url} alt={`Centre photo ${i + 1}`} className="w-full h-28 object-cover" />
+                {i === 0 && (
+                  <span className="absolute top-1.5 left-1.5 bg-gray-900/70 text-white text-[10px] font-medium px-1.5 py-0.5 rounded">Main</span>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : <p className="text-sm text-gray-300">No photos uploaded.</p>
+      ) : (
+        <>
+          {imageUrls.length > 0 && (
+            <div className="grid grid-cols-3 gap-3 mb-3">
+              {imageUrls.map((url, i) => (
+                <div key={url} className="relative rounded-lg overflow-hidden border border-gray-200">
+                  <img src={url} alt={`Centre photo ${i + 1}`} className="w-full h-28 object-cover" />
+                  {i === 0 && (
+                    <span className="absolute top-1.5 left-1.5 bg-gray-900/70 text-white text-[10px] font-medium px-1.5 py-0.5 rounded">Main</span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setImageUrls((prev) => prev.filter((_, j) => j !== i))}
+                    className="absolute top-1.5 right-1.5 bg-white/90 backdrop-blur text-gray-600 hover:text-red-600 rounded-full w-6 h-6 flex items-center justify-center text-xs shadow-sm"
+                  >
+                    &times;
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          {imageUrls.length < 3 && (
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              disabled={uploading}
+              className="w-full border-2 border-dashed border-gray-200 rounded-lg py-4 text-sm text-gray-500 hover:text-gray-700 hover:border-gray-300 transition-colors disabled:opacity-50"
+            >
+              {uploading ? 'Uploading...' : `Click to upload${imageUrls.length > 0 ? ' another photo' : ' a photo'}`}
+            </button>
+          )}
+          <input ref={fileRef} type="file" accept="image/*" onChange={handleUpload} className="hidden" />
           <SaveCancelRow saving={saving} onSave={handleSave} onCancel={handleCancel} message={null} />
         </>
       )}

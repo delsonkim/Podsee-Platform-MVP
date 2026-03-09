@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState, useTransition } from 'react'
+import { useRef, useMemo, useState, useTransition } from 'react'
 import {
   createMinimalCentre,
   updateCentreStep,
@@ -9,10 +9,7 @@ import {
   type TrialSlotInput,
 } from './actions'
 import { uploadCentreImage } from './image-actions'
-import SlotUploader, { type ParsedSlot } from '@/components/SlotUploader'
-import { parseSchedule, parseScheduleImage, createCustomSubject, saveParseCorrections } from './actions'
 import PricingPolicyStep from './PricingPolicyStep'
-import WeekDuplicationStep from './WeekDuplicationStep'
 
 interface Subject {
   id: string
@@ -102,10 +99,65 @@ export default function AddCentreForm({
     { ...emptyTeacher, is_founder: true, role: 'Founder' },
   ])
 
-  // Step 4: Schedule (required)
-  const [schedulePhase, setSchedulePhase] = useState<'upload' | 'duplicate' | 'ready'>('upload')
-  const [baseSlots, setBaseSlots] = useState<ParsedSlot[]>([]) // 1-week parsed slots
-  const [importedSlots, setImportedSlots] = useState<ParsedSlot[]>([])
+  // Step 4: Schedule (optional) — individual slots
+  interface SlotEntry {
+    subjectId: string
+    levelId: string
+    levelMode: 'standard' | 'age' | 'custom'
+    ageMin: string
+    ageMax: string
+    customLevel: string
+    stream: string
+    date: string
+    startTime: string
+    endTime: string
+    trialFee: string
+    maxStudents: string
+    notes: string
+  }
+  const [slotList, setSlotList] = useState<SlotEntry[]>([])
+  const [slotSubjectId, setSlotSubjectId] = useState('')
+  const [slotLevelId, setSlotLevelId] = useState('')
+  const [slotLevelMode, setSlotLevelMode] = useState<'standard' | 'age' | 'custom'>('standard')
+  const [slotAgeMin, setSlotAgeMin] = useState('')
+  const [slotAgeMax, setSlotAgeMax] = useState('')
+  const [slotCustomLevel, setSlotCustomLevel] = useState('')
+  const [slotStream, setSlotStream] = useState('')
+  const [slotDate, setSlotDate] = useState('')
+  const [slotStartTime, setSlotStartTime] = useState('')
+  const [slotEndTime, setSlotEndTime] = useState('')
+  const [slotTrialFee, setSlotTrialFee] = useState('')
+  const [slotMaxStudents, setSlotMaxStudents] = useState('4')
+  const [slotNotes, setSlotNotes] = useState('')
+
+  const levelGroups = useMemo(() => levels.reduce<Record<string, typeof levels>>((acc, l) => {
+    const group = l.level_group || 'Other'
+    if (!acc[group]) acc[group] = []
+    acc[group].push(l)
+    return acc
+  }, {}), [levels])
+
+  function resetSlotForm() {
+    setSlotSubjectId(''); setSlotLevelId(''); setSlotLevelMode('standard')
+    setSlotAgeMin(''); setSlotAgeMax(''); setSlotCustomLevel(''); setSlotStream('')
+    setSlotDate(''); setSlotStartTime(''); setSlotEndTime('')
+    setSlotTrialFee(''); setSlotMaxStudents('4'); setSlotNotes('')
+  }
+
+  function addSlotToList() {
+    if (!slotSubjectId || !slotDate || !slotStartTime || !slotEndTime) return
+    setSlotList((prev) => [...prev, {
+      subjectId: slotSubjectId, levelId: slotLevelId, levelMode: slotLevelMode,
+      ageMin: slotAgeMin, ageMax: slotAgeMax, customLevel: slotCustomLevel,
+      stream: slotStream, date: slotDate, startTime: slotStartTime, endTime: slotEndTime,
+      trialFee: slotTrialFee, maxStudents: slotMaxStudents, notes: slotNotes,
+    }])
+    resetSlotForm()
+  }
+
+  function removeSlotFromList(index: number) {
+    setSlotList((prev) => prev.filter((_, i) => i !== index))
+  }
 
   // ── Handlers ──────────────────────────────────────────────
 
@@ -130,11 +182,6 @@ export default function AddCentreForm({
 
   function removeTeacher(index: number) {
     setTeachers((prev) => prev.filter((_, i) => i !== index))
-  }
-
-  function handleSlotsImported(slots: ParsedSlot[]) {
-    setBaseSlots(slots)
-    setSchedulePhase('duplicate')
   }
 
   async function handleImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
@@ -164,7 +211,7 @@ export default function AddCentreForm({
     return true
   }
 
-  const hasValidSlots = importedSlots.some((s) => s.status === 'ok' || s.status === 'warning')
+  const hasSlots = slotList.length > 0
 
   // ── Progressive save per step ────────────────────────────
 
@@ -237,21 +284,22 @@ export default function AddCentreForm({
   function handleSaveSlots() {
     setError(null)
     if (!centreId) { setError('Centre not created yet.'); return }
+    if (slotList.length === 0) { setStep((s) => s + 1); return }
 
-    const trialSlots: TrialSlotInput[] = importedSlots.map((s) => ({
-      subject_id: s.subject_id,
-      level_id: s.level_id,
-      age_min: s.age_min,
-      age_max: s.age_max,
-      custom_level: s.custom_level,
-      stream: s.stream,
+    const trialSlots: TrialSlotInput[] = slotList.map((s) => ({
+      subject_id: s.subjectId || null,
+      level_id: s.levelMode === 'standard' ? (s.levelId || null) : null,
+      age_min: s.levelMode === 'age' && s.ageMin ? parseInt(s.ageMin) : null,
+      age_max: s.levelMode === 'age' && s.ageMax ? parseInt(s.ageMax) : null,
+      custom_level: s.levelMode === 'custom' && s.customLevel ? s.customLevel.trim() : null,
+      stream: s.levelMode === 'standard' && s.stream ? s.stream : null,
       date: s.date,
-      start_time: s.start_time,
-      end_time: s.end_time,
-      trial_fee: s.trial_fee,
-      max_students: s.max_students,
+      start_time: s.startTime,
+      end_time: s.endTime,
+      trial_fee: s.trialFee ? parseFloat(s.trialFee) : 0,
+      max_students: s.maxStudents ? parseInt(s.maxStudents) : 4,
       notes: s.notes,
-      raw_subject_text: s.raw_subject_text,
+      raw_subject_text: '',
     }))
 
     startTransition(async () => {
@@ -259,7 +307,7 @@ export default function AddCentreForm({
       if ('error' in result) {
         setError(result.error)
       } else {
-        setStep((s) => s + 1) // Advance to Pricing & Policies step
+        setStep((s) => s + 1)
       }
     })
   }
@@ -742,66 +790,149 @@ export default function AddCentreForm({
           </div>
         )}
 
-        {/* ── Step 4: Schedule (required) ──────────────────────── */}
+        {/* ── Step 4: Schedule (optional) ──────────────────────── */}
         {step === 3 && (
           <div className="space-y-5">
             <div>
-              <h2 className="text-lg font-bold text-gray-900">Trial Slot Schedule</h2>
+              <h2 className="text-lg font-bold text-gray-900">Trial Slot Schedule <span className="text-sm font-normal text-gray-400">(optional)</span></h2>
               <p className="text-sm text-gray-500 mt-1">
-                Upload the centre&apos;s trial class schedule. We&apos;ll parse 1 week, then you can duplicate it.
+                Add individual trial class slots. You can also add more later.
               </p>
             </div>
 
-            {/* Phase: ready — slots confirmed after duplication */}
-            {schedulePhase === 'ready' && importedSlots.length > 0 && (
-              <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4">
-                <p className="text-sm text-green-700 font-medium">
-                  {importedSlots.length} slot{importedSlots.length !== 1 ? 's' : ''} ready to import
-                </p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setImportedSlots([])
-                    setBaseSlots([])
-                    setSchedulePhase('upload')
-                  }}
-                  className="text-xs text-green-600 hover:text-green-800 mt-1"
-                >
-                  Clear and re-upload
-                </button>
+            {/* Added slots list */}
+            {slotList.length > 0 && (
+              <div className="border border-gray-200 rounded-lg overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="text-left px-3 py-2 text-xs font-medium text-gray-500">Subject</th>
+                      <th className="text-left px-3 py-2 text-xs font-medium text-gray-500">Level</th>
+                      <th className="text-left px-3 py-2 text-xs font-medium text-gray-500">Date</th>
+                      <th className="text-left px-3 py-2 text-xs font-medium text-gray-500">Time</th>
+                      <th className="px-3 py-2"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {slotList.map((slot, i) => {
+                      const subName = subjects.find((s) => s.id === slot.subjectId)?.name ?? '—'
+                      const lvlLabel = slot.levelMode === 'standard'
+                        ? (levels.find((l) => l.id === slot.levelId)?.label ?? 'All')
+                        : slot.levelMode === 'age'
+                        ? `Ages ${slot.ageMin}–${slot.ageMax || '?'}`
+                        : slot.customLevel || '—'
+                      return (
+                        <tr key={i}>
+                          <td className="px-3 py-2 text-gray-900">{subName}</td>
+                          <td className="px-3 py-2 text-gray-600">{lvlLabel}{slot.stream && <span className="text-gray-400 text-xs ml-1">({slot.stream})</span>}</td>
+                          <td className="px-3 py-2 text-gray-600">{slot.date}</td>
+                          <td className="px-3 py-2 text-gray-600">{slot.startTime}–{slot.endTime}</td>
+                          <td className="px-3 py-2 text-right">
+                            <button type="button" onClick={() => removeSlotFromList(i)} className="text-xs text-red-500 hover:text-red-700">Remove</button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
               </div>
             )}
 
-            {/* Phase: upload — parse 1 week */}
-            {schedulePhase === 'upload' && (
-              <SlotUploader
-                subjects={subjects}
-                levels={levels}
-                centreId={centreId ?? undefined}
-                onSlotsReady={handleSlotsImported}
-                parseScheduleFn={(text, weeks) => parseSchedule(text, centreId ?? undefined, weeks)}
-                parseScheduleImageFn={(b64, mt, weeks) => parseScheduleImage(b64, mt, centreId ?? undefined, weeks)}
-                createCustomSubjectFn={createCustomSubject}
-                saveCorrectionsFn={saveParseCorrections}
-                hideWeeksInput
-                hideFee
-              />
-            )}
-
-            {/* Phase: duplicate — review and duplicate across weeks */}
-            {schedulePhase === 'duplicate' && baseSlots.length > 0 && (
-              <WeekDuplicationStep
-                baseSlots={baseSlots}
-                onConfirm={(slots) => {
-                  setImportedSlots(slots)
-                  setSchedulePhase('ready')
-                }}
-                onBack={() => {
-                  setBaseSlots([])
-                  setSchedulePhase('upload')
-                }}
-              />
-            )}
+            {/* Add slot form */}
+            <div className="border border-gray-200 rounded-lg p-4 space-y-4">
+              <p className="text-sm font-medium text-gray-700">Add a slot</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Subject <span className="text-red-500">*</span></label>
+                  <select value={slotSubjectId} onChange={(e) => setSlotSubjectId(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400">
+                    <option value="">Select subject...</option>
+                    {subjects.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Level</label>
+                  <div className="flex gap-1 bg-gray-50 rounded-lg p-0.5 mb-2">
+                    {([['standard', 'School Level'], ['age', 'Age Range'], ['custom', 'Custom']] as const).map(([key, label]) => (
+                      <button key={key} type="button" onClick={() => { setSlotLevelMode(key); setSlotLevelId(''); setSlotStream(''); setSlotAgeMin(''); setSlotAgeMax(''); setSlotCustomLevel('') }}
+                        className={`flex-1 text-[11px] font-medium py-1.5 rounded-md transition-colors ${slotLevelMode === key ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  {slotLevelMode === 'standard' && (
+                    <>
+                      <select value={slotLevelId} onChange={(e) => setSlotLevelId(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400">
+                        <option value="">Select level...</option>
+                        {Object.entries(levelGroups).map(([group, lvls]) => (
+                          <optgroup key={group} label={group}>
+                            {lvls.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
+                          </optgroup>
+                        ))}
+                      </select>
+                      {slotLevelId && levels.find((l) => l.id === slotLevelId)?.level_group === 'Secondary' && (
+                        <select value={slotStream} onChange={(e) => setSlotStream(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-2 focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400">
+                          <option value="">No stream</option>
+                          <option value="G3">G3 (Express)</option>
+                          <option value="G2">G2 (Normal Academic)</option>
+                          <option value="G1">G1 (Foundational)</option>
+                          <option value="IP">IP</option>
+                          <option value="IB">IB</option>
+                        </select>
+                      )}
+                    </>
+                  )}
+                  {slotLevelMode === 'age' && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-gray-500">Ages</span>
+                      <input type="number" min="3" max="25" value={slotAgeMin} onChange={(e) => setSlotAgeMin(e.target.value)} placeholder="Min" className="w-20 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400" />
+                      <span className="text-sm text-gray-400">to</span>
+                      <input type="number" min="3" max="25" value={slotAgeMax} onChange={(e) => setSlotAgeMax(e.target.value)} placeholder="Max" className="w-20 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400" />
+                    </div>
+                  )}
+                  {slotLevelMode === 'custom' && (
+                    <input type="text" value={slotCustomLevel} onChange={(e) => setSlotCustomLevel(e.target.value)} placeholder="e.g. White Belt, Grade 1, Beginner" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400" />
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Date <span className="text-red-500">*</span></label>
+                  <input type="date" value={slotDate} onChange={(e) => setSlotDate(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Start <span className="text-red-500">*</span></label>
+                    <input type="time" value={slotStartTime} onChange={(e) => setSlotStartTime(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">End <span className="text-red-500">*</span></label>
+                    <input type="time" value={slotEndTime} onChange={(e) => setSlotEndTime(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400" />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Trial Fee (S$)</label>
+                  <input type="number" min="0" step="0.01" value={slotTrialFee} onChange={(e) => setSlotTrialFee(e.target.value)} placeholder="0" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Max Students</label>
+                  <input type="number" min="1" value={slotMaxStudents} onChange={(e) => setSlotMaxStudents(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400" />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                  <input type="text" value={slotNotes} onChange={(e) => setSlotNotes(e.target.value)} placeholder="e.g. Bring calculator" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400" />
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={addSlotToList}
+                disabled={!slotSubjectId || !slotDate || !slotStartTime || !slotEndTime}
+                className={`text-sm font-medium px-4 py-2 rounded-lg transition-colors ${
+                  slotSubjectId && slotDate && slotStartTime && slotEndTime
+                    ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    : 'bg-gray-100 text-gray-300 cursor-not-allowed'
+                }`}
+              >
+                + Add Slot
+              </button>
+            </div>
           </div>
         )}
 
@@ -837,16 +968,14 @@ export default function AddCentreForm({
             <button
               type="button"
               onClick={handleSaveSlots}
-              disabled={isPending || !hasValidSlots || !centreId}
+              disabled={isPending || !centreId}
               className={`text-sm font-medium px-6 py-2.5 rounded-lg transition-colors ${
                 isPending
                   ? 'bg-gray-300 text-gray-500 cursor-wait'
-                  : hasValidSlots && centreId
-                  ? 'bg-gray-900 text-white hover:bg-gray-800'
-                  : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                  : 'bg-gray-900 text-white hover:bg-gray-800'
               }`}
             >
-              {isPending ? 'Saving slots...' : 'Save Slots & Continue'}
+              {isPending ? 'Saving slots...' : hasSlots ? 'Save Slots & Continue' : 'Skip & Continue'}
             </button>
           )}
 
