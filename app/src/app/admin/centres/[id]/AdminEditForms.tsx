@@ -573,12 +573,16 @@ export function ImagesEditForm({ centreId, initial }: {
     if (!file) return
     setUploading(true)
     setMessage(null)
-    const fd = new FormData()
-    fd.append('file', file)
-    const result = await uploadCentreImage(fd)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const result = await uploadCentreImage(fd)
+      if ('url' in result) setImageUrls((prev) => [...prev, result.url])
+      else setMessage({ type: 'error', text: result.error })
+    } catch {
+      setMessage({ type: 'error', text: 'Upload failed. Check that the storage bucket exists.' })
+    }
     setUploading(false)
-    if ('url' in result) setImageUrls((prev) => [...prev, result.url])
-    else setMessage({ type: 'error', text: result.error })
     if (fileRef.current) fileRef.current.value = ''
   }
 
