@@ -537,62 +537,84 @@ export default function AddCentreForm({
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                In one sentence, what do you specialise in? <span className="text-red-500">*</span>
+                In one sentence, tell me about your centre. <span className="text-red-500">*</span>
               </label>
-              <p className="text-xs text-gray-400 mb-2">
-                e.g. &quot;We specialise in small-group PSLE Mathematics for P4-P6 students.&quot;
-              </p>
               <input
                 type="text"
                 value={specialisation}
                 onChange={(e) => setSpecialisation(e.target.value)}
+                placeholder="e.g. We specialise in small-group PSLE Mathematics for P4-P6 students."
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400"
               />
             </div>
 
             <div>
-              <p className="text-sm font-medium text-gray-700 mb-2">What type of student do you help most?</p>
-              <div className="space-y-2">
-                {STUDENT_TYPES.map(({ key, label }) => (
-                  <label key={key} className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={studentTypes.has(key)}
-                      onChange={() => toggleStudentType(key)}
-                      className="w-4 h-4 rounded border-gray-300"
-                    />
-                    <span className="text-sm text-gray-600">{label}</span>
-                  </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                What is your teaching style in 2-5 words?
+              </label>
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {[
+                  'Structured & exam-focused',
+                  'Concept mastery first',
+                  'Small group, high attention',
+                  'Past-paper intensive',
+                  'Bilingual & culturally aware',
+                  'Creative & inquiry-based',
+                  'Patient, confidence-building',
+                  'Fast-paced, high-achiever track',
+                ].map((example) => (
+                  <button
+                    key={example}
+                    type="button"
+                    onClick={() => setTeachingApproach(example)}
+                    className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                      teachingApproach === example
+                        ? 'bg-gray-900 text-white border-gray-900'
+                        : 'bg-gray-50 text-gray-500 border-gray-200 hover:border-gray-300 hover:text-gray-700'
+                    }`}
+                  >
+                    {example}
+                  </button>
                 ))}
               </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                What makes your teaching approach different from others?
-              </label>
-              <p className="text-xs text-gray-400 mb-2">
-                e.g. concept mastery before drilling, structured answering techniques, past-paper focus
-              </p>
-              <textarea
+              <input
+                type="text"
                 value={teachingApproach}
                 onChange={(e) => setTeachingApproach(e.target.value)}
-                rows={3}
+                placeholder="Or type your own..."
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400"
               />
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                What results have your students achieved?
+                Share one result you&apos;re proud of — a stat that shows what your students achieve.
               </label>
-              <p className="text-xs text-gray-400 mb-2">
-                e.g. &quot;80% of our P6 students improved by at least one grade band.&quot;
-              </p>
-              <textarea
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {[
+                  '90% improved by 2 grades or more',
+                  '85% scored B3 and above',
+                  '70% of our P6s made it to their first-choice secondary',
+                ].map((example) => (
+                  <button
+                    key={example}
+                    type="button"
+                    onClick={() => setResults(example)}
+                    className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                      results === example
+                        ? 'bg-gray-900 text-white border-gray-900'
+                        : 'bg-gray-50 text-gray-500 border-gray-200 hover:border-gray-300 hover:text-gray-700'
+                    }`}
+                  >
+                    {example}
+                  </button>
+                ))}
+              </div>
+              <input
+                type="text"
                 value={results}
                 onChange={(e) => setResults(e.target.value)}
-                rows={3}
+                placeholder="Or type your own..."
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400"
               />
             </div>

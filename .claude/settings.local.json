@@ -1,7 +1,16 @@
 {
   "permissions": {
     "allow": [
-      "Bash(supabase --version)"
+      "Bash(supabase --version)",
+      "Bash(npm run dev)",
+      "Bash(npx tsc --noEmit)",
+      "Bash(npm i -g vercel)",
+      "Bash(npx vercel --version)",
+      "Bash(npx vercel deploy --yes)",
+      "Bash(npx vercel login)",
+      "Bash(npx vercel project settings podsee-platform-mvp)",
+      "Bash(npx vercel inspect --help)",
+      "Bash(ls /Users/delsonkim/Library/CloudStorage/OneDrive-Personal/Desktop/Podsee-Platform-MVP/app/src/app/\\\\\\(public\\\\\\)/centres/)"
     ]
   }
 }
