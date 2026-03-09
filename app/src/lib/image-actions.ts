@@ -17,9 +17,12 @@ export async function uploadCentreImage(
   const ext = file.name.split('.').pop() || 'jpg'
   const path = `heroes/${Date.now()}-${Math.random().toString(36).slice(2, 6)}.${ext}`
 
+  const arrayBuffer = await file.arrayBuffer()
+  const buffer = Buffer.from(arrayBuffer)
+
   const { error: uploadError } = await supabase.storage
     .from('centre-images')
-    .upload(path, file, { contentType: file.type, upsert: false })
+    .upload(path, buffer, { contentType: file.type, upsert: false })
 
   if (uploadError) return { error: uploadError.message }
 
@@ -45,9 +48,12 @@ export async function uploadPaynowQr(
   const ext = file.name.split('.').pop() || 'jpg'
   const path = `paynow-qr/${Date.now()}-${Math.random().toString(36).slice(2, 6)}.${ext}`
 
+  const arrayBuffer = await file.arrayBuffer()
+  const buffer = Buffer.from(arrayBuffer)
+
   const { error: uploadError } = await supabase.storage
     .from('centre-images')
-    .upload(path, file, { contentType: file.type, upsert: false })
+    .upload(path, buffer, { contentType: file.type, upsert: false })
 
   if (uploadError) return { error: uploadError.message }
 
